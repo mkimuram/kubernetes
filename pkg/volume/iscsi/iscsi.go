@@ -99,7 +99,7 @@ func (plugin *iscsiPlugin) NewMounter(spec *volume.Spec, pod *v1.Pod, _ volume.V
 	if err != nil {
 		return nil, err
 	}
-	glog.Infof("######### DEBUG MESSAGE #######: %v", pod.Namespace)
+	glog.Infof("######### DEBUG MESSAGE ########: %v", pod.Namespace)
 	return plugin.newMounterInternal(spec, pod.UID, &ISCSIUtil{}, plugin.host.GetMounter(plugin.GetPluginName()), plugin.host.GetExec(plugin.GetPluginName()), secret)
 }
 
