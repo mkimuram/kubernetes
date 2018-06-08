@@ -4186,14 +4186,15 @@ func WaitForMasters(masterPrefix string, c clientset.Interface, size int, timeou
 // GetHostExternalAddress gets the node for a pod and returns the first External
 // address. Returns an error if the node the pod is on doesn't have an External
 // address.
-func GetHostExternalAddress(client clientset.Interface, p *v1.Pod) (externalAddress string, err error) {
+func GetHostExternalAddress(client clientset.Interface, p *v1.Pod) (string, error) {
+	var externalAddress string
 	node, err := client.CoreV1().Nodes().Get(p.Spec.NodeName, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
 	for _, address := range node.Status.Addresses {
 		if address.Type == v1.NodeExternalIP {
-			if address.Address != "" {
+			if len(address.Address) != 0 {
 				externalAddress = address.Address
 				break
 			}
@@ -4203,20 +4204,21 @@ func GetHostExternalAddress(client clientset.Interface, p *v1.Pod) (externalAddr
 		err = fmt.Errorf("No external address for pod %v on node %v",
 			p.Name, p.Spec.NodeName)
 	}
-	return
+	return externalAddress, err
 }
 
 // GetHostInternalAddress gets the node for a pod and returns the first Internal
 // address. Returns an error if the node the pod is on doesn't have an Internal
 // address.
-func GetHostInternalAddress(client clientset.Interface, p *v1.Pod) (internalAddress string, err error) {
+func GetHostInternalAddress(client clientset.Interface, p *v1.Pod) (string, error) {
+	var internalAddress string
 	node, err := client.CoreV1().Nodes().Get(p.Spec.NodeName, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
 	for _, address := range node.Status.Addresses {
 		if address.Type == v1.NodeInternalIP {
-			if address.Address != "" {
+			if len(address.Address) != 0 {
 				internalAddress = address.Address
 				break
 			}
@@ -4226,7 +4228,7 @@ func GetHostInternalAddress(client clientset.Interface, p *v1.Pod) (internalAddr
 		err = fmt.Errorf("No internal address for pod %v on node %v",
 			p.Name, p.Spec.NodeName)
 	}
-	return
+	return internalAddress, err
 }
 
 type extractRT struct {
@@ -4836,6 +4838,24 @@ func GetMasterAndWorkerNodesOrDie(c clientset.Interface) (sets.String, *v1.NodeL
 
 func ListNamespaceEvents(c clientset.Interface, ns string) error {
 	ls, err := c.CoreV1().Events(ns).List(metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	for _, event := range ls.Items {
+		glog.Infof("Event(%#v): type: '%v' reason: '%v' %v", event.InvolvedObject, event.Type, event.Reason, event.Message)
+	}
+	return nil
+}
+
+func ListPodEvents(c clientset.Interface, ns string, podName string) error {
+	selector := fields.Set{
+		"involvedObject.kind":      "Pod",
+		"involvedObject.name":      podName,
+		"involvedObject.namespace": ns,
+	}.AsSelector().String()
+	options := metav1.ListOptions{FieldSelector: selector}
+
+	ls, err := c.CoreV1().Events(ns).List(options)
 	if err != nil {
 		return err
 	}

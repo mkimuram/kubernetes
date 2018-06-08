@@ -31,7 +31,12 @@ import (
 	"k8s.io/kubernetes/test/e2e/storage/utils"
 )
 
-func generateConfigsForStaticProvisionPVtest(scName string, volBindMode storagev1.VolumeBindingMode,
+const (
+	noProvisioner = "kubernetes.io/no-provisioner"
+	pvNamePrefix  = "pv"
+)
+
+func generateConfigsForStaticProvisionPVTest(scName string, volBindMode storagev1.VolumeBindingMode,
 	volMode v1.PersistentVolumeMode, pvSource v1.PersistentVolumeSource) (*storagev1.StorageClass,
 	framework.PersistentVolumeConfig, framework.PersistentVolumeClaimConfig) {
 	// StorageClass
@@ -39,27 +44,27 @@ func generateConfigsForStaticProvisionPVtest(scName string, volBindMode storagev
 		ObjectMeta: metav1.ObjectMeta{
 			Name: scName,
 		},
-		Provisioner:       "kubernetes.io/no-provisioner",
+		Provisioner:       noProvisioner,
 		VolumeBindingMode: &volBindMode,
 	}
 	// PV
 	pvConfig := framework.PersistentVolumeConfig{
-		PVSource: pvSource,
-		NamePrefix:       "pv",
+		PVSource:         pvSource,
+		NamePrefix:       pvNamePrefix,
 		StorageClassName: scName,
-		VolumeMode: &volMode,
+		VolumeMode:       &volMode,
 	}
 	// PVC
 	pvcConfig := framework.PersistentVolumeClaimConfig{
-			AccessModes:      []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
-			StorageClassName: &scName,
-			VolumeMode: &volMode,
+		AccessModes:      []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
+		StorageClassName: &scName,
+		VolumeMode:       &volMode,
 	}
 
 	return scConfig, pvConfig, pvcConfig
 }
 
-func createPVtestResource(cs clientset.Interface, ns string,
+func createPVTestResource(cs clientset.Interface, ns string,
 	scConfig *storagev1.StorageClass, pvConfig framework.PersistentVolumeConfig,
 	pvcConfig framework.PersistentVolumeClaimConfig) (*storagev1.StorageClass, *v1.Pod, *v1.PersistentVolume, *v1.PersistentVolumeClaim) {
 
@@ -75,13 +80,13 @@ func createPVtestResource(cs clientset.Interface, ns string,
 	By("Creating a pod")
 	// TODO(mkimuram): Need to set anti-affinity with storage server pod.
 	// Otherwise, storage server pod can also be affected on destructive tests.
-	pod, err := framework.CreateSecPod(cs, ns, []*v1.PersistentVolumeClaim{pvc}, false, "", false, false, selinuxLabel, nil, framework.PodStartTimeout)
+	pod, err := framework.CreateSecPod(cs, ns, []*v1.PersistentVolumeClaim{pvc}, false, "", false, false, framework.SelinuxLabel, nil, framework.PodStartTimeout)
 	Expect(err).NotTo(HaveOccurred())
 
 	return sc, pod, pv, pvc
 }
 
-func createPVtestResourceWithFailure(cs clientset.Interface, ns string,
+func createPVTestResourceWithFailure(cs clientset.Interface, ns string,
 	scConfig *storagev1.StorageClass, pvConfig framework.PersistentVolumeConfig,
 	pvcConfig framework.PersistentVolumeClaimConfig) (*storagev1.StorageClass, *v1.Pod, *v1.PersistentVolume, *v1.PersistentVolumeClaim) {
 
@@ -95,7 +100,7 @@ func createPVtestResourceWithFailure(cs clientset.Interface, ns string,
 	framework.ExpectNoError(framework.WaitOnPVandPVC(cs, ns, pv, pvc))
 
 	By("Creating a pod")
-	pod, err := framework.CreateSecPod(cs, ns, []*v1.PersistentVolumeClaim{pvc}, false, "", false, false, selinuxLabel, nil, framework.PodStartTimeout)
+	pod, err := framework.CreateSecPod(cs, ns, []*v1.PersistentVolumeClaim{pvc}, false, "", false, false, framework.SelinuxLabel, nil, framework.PodStartTimeout)
 	Expect(err).To(HaveOccurred())
 
 	By("Checking events for pod")
@@ -108,7 +113,7 @@ func createPVtestResourceWithFailure(cs clientset.Interface, ns string,
 	return sc, pod, pv, pvc
 }
 
-func deletePVtestResource(f *framework.Framework, cs clientset.Interface, ns string, sc *storagev1.StorageClass,
+func deletePVTestResource(f *framework.Framework, cs clientset.Interface, ns string, sc *storagev1.StorageClass,
 	pod *v1.Pod, pv *v1.PersistentVolume, pvc *v1.PersistentVolumeClaim) {
 	By("Deleting pod")
 	framework.ExpectNoError(framework.DeletePodWithWait(f, cs, pod))
@@ -125,37 +130,43 @@ func deletePVtestResource(f *framework.Framework, cs clientset.Interface, ns str
 
 func checkVolumeModeOfPath(pod *v1.Pod, volMode v1.PersistentVolumeMode, path string) {
 	if volMode == v1.PersistentVolumeBlock {
-		// check if block exists
-		_, err := utils.PodExec(pod, fmt.Sprintf("test -b %s", path))
-		Expect(err).NotTo(HaveOccurred())
+		// Check if block exists
+		utils.VerifyExecInPodSucceed(pod, fmt.Sprintf("test -b %s", path))
+
+		// Double check that it's not directory
+		utils.VerifyExecInPodFail(pod, fmt.Sprintf("test -d %s", path), 1)
 	} else {
-		// check if directory exists
-		_, err := utils.PodExec(pod, fmt.Sprintf("test -d %s", path))
-		Expect(err).NotTo(HaveOccurred())
+		// Check if directory exists
+		utils.VerifyExecInPodSucceed(pod, fmt.Sprintf("test -d %s", path))
+
+		// Double check that it's not block
+		utils.VerifyExecInPodFail(pod, fmt.Sprintf("test -b %s", path), 1)
 	}
 }
 
 func checkReadWriteToPath(pod *v1.Pod, volMode v1.PersistentVolumeMode, path string) {
 	if volMode == v1.PersistentVolumeBlock {
 		// random -> file1
-		_, err := utils.PodExec(pod, "dd if=/dev/random of=/tmp/file1.txt bs=64 count=1")
-		Expect(err).NotTo(HaveOccurred())
+		utils.VerifyExecInPodSucceed(pod, "dd if=/dev/random of=/tmp/file1.txt bs=64 count=1")
 		// file1 -> dev (write to dev)
-		_, err = utils.PodExec(pod, fmt.Sprintf("dd if=/tmp/file1.txt of=%s bs=64 count=1", path))
-		Expect(err).NotTo(HaveOccurred())
+		utils.VerifyExecInPodSucceed(pod, fmt.Sprintf("dd if=/tmp/file1.txt of=%s bs=64 count=1", path))
 		// dev -> file2 (read from dev)
-		_, err = utils.PodExec(pod, fmt.Sprintf("dd if=%s of=/tmp/file2.txt bs=64 count=1", path))
-		Expect(err).NotTo(HaveOccurred())
+		utils.VerifyExecInPodSucceed(pod, fmt.Sprintf("dd if=%s of=/tmp/file2.txt bs=64 count=1", path))
 		// file1 == file2 (check contents)
-		_, err = utils.PodExec(pod, "diff /tmp/file1.txt /tmp/file2.txt")
-		Expect(err).NotTo(HaveOccurred())
+		utils.VerifyExecInPodSucceed(pod, "diff /tmp/file1.txt /tmp/file2.txt")
+		// Clean up temp files
+		utils.VerifyExecInPodSucceed(pod, "rm -f /tmp/file1.txt /tmp/file2.txt")
+
+		// Check that writing file to block volume fails
+		utils.VerifyExecInPodFail(pod, fmt.Sprintf("echo 'Hello world.' > %s/file1.txt", path), 1)
 	} else {
 		// text -> file1 (write to file)
-		_, err := utils.PodExec(pod, fmt.Sprintf("echo 'Hello world.' > %s/file1.txt", path))
-		Expect(err).NotTo(HaveOccurred())
+		utils.VerifyExecInPodSucceed(pod, fmt.Sprintf("echo 'Hello world.' > %s/file1.txt", path))
 		// grep file1 (read from file and check contents)
-		_, err = utils.PodExec(pod, fmt.Sprintf("grep 'Hello world.' %s/file1.txt", path))
-		Expect(err).NotTo(HaveOccurred())
+		utils.VerifyExecInPodSucceed(pod, fmt.Sprintf("grep 'Hello world.' %s/file1.txt", path))
+
+		// Check that writing to directory as block volume fails
+		utils.VerifyExecInPodFail(pod, fmt.Sprintf("dd if=/dev/random of=%s bs=64 count=1", path), 1)
 	}
 }
 
@@ -171,27 +182,27 @@ func skipBlockUnsupportTestUnlessUnspported(volMode v1.PersistentVolumeMode, isB
 	}
 }
 
-
 var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 	f := framework.NewDefaultFramework("pv-volmode")
 	const (
 		pvTestSCPrefix = "pvtest"
 	)
+
 	var (
-		cs        clientset.Interface
-		ns        string
-		scName string
+		cs               clientset.Interface
+		ns               string
+		scName           string
 		isBlockSupported bool
-		serverIP  string
-		secret *v1.Secret
-		serverPod *v1.Pod
-		pvSource v1.PersistentVolumeSource
-		sc *storagev1.StorageClass
-		pod *v1.Pod
-		pv *v1.PersistentVolume
-		pvc *v1.PersistentVolumeClaim
-		volMode v1.PersistentVolumeMode
-		volBindMode storagev1.VolumeBindingMode
+		serverIP         string
+		secret           *v1.Secret
+		serverPod        *v1.Pod
+		pvSource         v1.PersistentVolumeSource
+		sc               *storagev1.StorageClass
+		pod              *v1.Pod
+		pv               *v1.PersistentVolume
+		pvc              *v1.PersistentVolumeClaim
+		volMode          v1.PersistentVolumeMode
+		volBindMode      storagev1.VolumeBindingMode
 	)
 
 	BeforeEach(func() {
@@ -202,17 +213,17 @@ var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 
 	AssertCreateDeletePodAndReadWriteVolume := func() {
 		// For block supported plugins
-		It("should create pod, read/write to the volume in it, and delete pod", func() {
+		It("should create sc, pod, pv, and pvc, read/write to the pv, and delete all created resources", func() {
 			skipBlockSupportTestIfUnsupported(volMode, isBlockSupported)
 
-			scConfig, pvConfig, pvcConfig := generateConfigsForStaticProvisionPVtest(scName, volBindMode, volMode, pvSource)
-			sc, pod, pv, pvc = createPVtestResource(cs, ns, scConfig, pvConfig, pvcConfig)
-			defer deletePVtestResource(f, cs, ns, sc, pod, pv, pvc)
+			scConfig, pvConfig, pvcConfig := generateConfigsForStaticProvisionPVTest(scName, volBindMode, volMode, pvSource)
+			sc, pod, pv, pvc = createPVTestResource(cs, ns, scConfig, pvConfig, pvcConfig)
+			defer deletePVTestResource(f, cs, ns, sc, pod, pv, pvc)
 
 			By("Checking if persistent volume exists as expected volume mode")
 			checkVolumeModeOfPath(pod, volMode, "/mnt/volume1")
 
-			By("Checking if read/write to persistent volume work properly")
+			By("Checking if read/write to persistent volume works properly")
 			checkReadWriteToPath(pod, volMode, "/mnt/volume1")
 		})
 
@@ -220,9 +231,9 @@ var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 		It("should fail to create pod by failing to mount volume", func() {
 			skipBlockUnsupportTestUnlessUnspported(volMode, isBlockSupported)
 
-			scConfig, pvConfig, pvcConfig := generateConfigsForStaticProvisionPVtest(scName, volBindMode, volMode, pvSource)
-			sc, pod, pv, pvc = createPVtestResourceWithFailure(cs, ns, scConfig, pvConfig, pvcConfig)
-			deletePVtestResource(f, cs, ns, sc, pod, pv, pvc)
+			scConfig, pvConfig, pvcConfig := generateConfigsForStaticProvisionPVTest(scName, volBindMode, volMode, pvSource)
+			sc, pod, pv, pvc = createPVTestResourceWithFailure(cs, ns, scConfig, pvConfig, pvcConfig)
+			deletePVTestResource(f, cs, ns, sc, pod, pv, pvc)
 		})
 	}
 
@@ -231,9 +242,9 @@ var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 		It("should find volume before and after kubelet restart [Disruptive]", func() {
 			skipBlockSupportTestIfUnsupported(volMode, isBlockSupported)
 
-			scConfig, pvConfig, pvcConfig := generateConfigsForStaticProvisionPVtest(scName, volBindMode, volMode, pvSource)
-			sc, pod, pv, pvc = createPVtestResource(cs, ns, scConfig, pvConfig, pvcConfig)
-			defer deletePVtestResource(f, cs, ns, sc, pod, pv, pvc)
+			scConfig, pvConfig, pvcConfig := generateConfigsForStaticProvisionPVTest(scName, volBindMode, volMode, pvSource)
+			sc, pod, pv, pvc = createPVTestResource(cs, ns, scConfig, pvConfig, pvcConfig)
+			defer deletePVTestResource(f, cs, ns, sc, pod, pv, pvc)
 
 			By("Before kubelet restart, checking if persistent volume exists in pod")
 			checkVolumeModeOfPath(pod, volMode, "/mnt/volume1")
@@ -242,11 +253,7 @@ var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 			utils.KubeletCommand(utils.KRestart, cs, pod)
 
 			By("Checking events for pod")
-			eventList, err := cs.CoreV1().Events(ns).List(metav1.ListOptions{})
-			Expect(err).NotTo(HaveOccurred())
-			for _, event := range eventList.Items {
-				framework.Logf("%v", event.Message)
-			}
+			framework.ExpectNoError(framework.ListPodEvents(cs, ns, pod.Name))
 
 			By("After kubelet restart, checking if persistent volume exists in pod")
 			checkVolumeModeOfPath(pod, volMode, "/mnt/volume1")
@@ -261,9 +268,9 @@ var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 		It("should unmount volume from deleted pod after kubelet restart [Disruptive]", func() {
 			skipBlockSupportTestIfUnsupported(volMode, isBlockSupported)
 
-			scConfig, pvConfig, pvcConfig := generateConfigsForStaticProvisionPVtest(scName, volBindMode, volMode, pvSource)
-			sc, pod, pv, pvc = createPVtestResource(cs, ns, scConfig, pvConfig, pvcConfig)
-			defer deletePVtestResource(f, cs, ns, sc, pod, pv, pvc)
+			scConfig, pvConfig, pvcConfig := generateConfigsForStaticProvisionPVTest(scName, volBindMode, volMode, pvSource)
+			sc, pod, pv, pvc = createPVTestResource(cs, ns, scConfig, pvConfig, pvcConfig)
+			defer deletePVTestResource(f, cs, ns, sc, pod, pv, pvc)
 
 			// TODO(mkimuram): Confirm if this check needs to be different for Block volume
 			utils.TestVolumeUnmountsFromDeletedPodWithForceOption(cs, f, pod, false, false)
@@ -287,7 +294,7 @@ var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 			scName = fmt.Sprintf("%v-%v-%v", pvTestSCPrefix, ns, pvTestNFSSCSuffix)
 			_, serverPod, serverIP = framework.NewNFSServer(cs, ns, []string{})
 
-			pvSource = v1.PersistentVolumeSource {
+			pvSource = v1.PersistentVolumeSource{
 				NFS: &v1.NFSVolumeSource{
 					Server:   serverIP,
 					Path:     "/",
@@ -296,7 +303,7 @@ var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 			}
 		})
 
-                AfterEach(func() {
+		AfterEach(func() {
 			framework.Logf("AfterEach: deleting NFS server pod %q...", serverPod.Name)
 			err := framework.DeletePodWithWait(f, cs, serverPod)
 			Expect(err).NotTo(HaveOccurred(), "AfterEach: NFS server pod failed to delete")
@@ -327,16 +334,16 @@ var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 			scName = fmt.Sprintf("%v-%v-%v", pvTestSCPrefix, ns, pvTestISCSISCSuffix)
 			_, serverPod, serverIP = framework.NewISCSIServer(cs, ns)
 
-			pvSource = v1.PersistentVolumeSource {
-				ISCSI: &v1.ISCSIPersistentVolumeSource {
+			pvSource = v1.PersistentVolumeSource{
+				ISCSI: &v1.ISCSIPersistentVolumeSource{
 					TargetPortal: serverIP + ":3260",
-					IQN: "iqn.2003-01.org.linux-iscsi.f21.x8664:sn.4b0aae584f7c",
-					Lun: 0,
+					IQN:          "iqn.2003-01.org.linux-iscsi.f21.x8664:sn.4b0aae584f7c",
+					Lun:          0,
 				},
 			}
 		})
 
-                AfterEach(func() {
+		AfterEach(func() {
 			framework.Logf("AfterEach: deleting iSCSI server pod %q...", serverPod.Name)
 			err := framework.DeletePodWithWait(f, cs, serverPod)
 			Expect(err).NotTo(HaveOccurred(), "AfterEach: iSCSI server pod failed to delete")
@@ -368,14 +375,14 @@ var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 			_, serverPod, secret, serverIP = framework.NewRBDServer(cs, ns)
 
 			framework.Logf("namespace: %v, secret.Name: %v", ns, secret.Name)
-			pvSource = v1.PersistentVolumeSource {
+			pvSource = v1.PersistentVolumeSource{
 				RBD: &v1.RBDPersistentVolumeSource{
 					CephMonitors: []string{serverIP},
 					RBDPool:      "rbd",
 					RBDImage:     "foo",
 					RadosUser:    "admin",
-					SecretRef: &v1.SecretReference {
-						Name: secret.Name,
+					SecretRef: &v1.SecretReference{
+						Name:      secret.Name,
 						Namespace: ns,
 					},
 					ReadOnly: false,
@@ -424,12 +431,12 @@ var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 			scName = fmt.Sprintf("%v-%v-%v", pvTestSCPrefix, ns, pvTestCephFSSCSuffix)
 			_, serverPod, secret, serverIP = framework.NewRBDServer(cs, ns)
 
-			pvSource = v1.PersistentVolumeSource {
+			pvSource = v1.PersistentVolumeSource{
 				CephFS: &v1.CephFSPersistentVolumeSource{
-					Monitors: []string{serverIP  + ":6789"},
-					User:    "kube",
-					SecretRef: &v1.SecretReference {
-						Name: secret.Name,
+					Monitors: []string{serverIP + ":6789"},
+					User:     "kube",
+					SecretRef: &v1.SecretReference{
+						Name:      secret.Name,
 						Namespace: ns,
 					},
 					ReadOnly: false,
@@ -471,4 +478,3 @@ var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
 	})
 
 })
-
