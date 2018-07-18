@@ -68,7 +68,7 @@ const (
 	TiB int64 = 1024 * GiB
 
 	// Waiting period for volume server (Ceph, ...) to initialize itself.
-	VolumeServerPodStartupTimeout = 1 * time.Minute
+	VolumeServerPodStartupTimeout = 3 * time.Minute
 
 	// Waiting period for pod to be cleaned up and unmount its volumes so we
 	// don't tear down containers with NFS/Ceph/Gluster server too early.
