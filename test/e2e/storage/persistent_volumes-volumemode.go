@@ -118,7 +118,9 @@ func deletePVTestResource(f *framework.Framework, cs clientset.Interface, ns str
 	}
 
 	By("Deleting sc")
-	framework.ExpectNoError(cs.StorageV1().StorageClasses().Delete(sc.Name, nil))
+	if sc != nil {
+		framework.ExpectNoError(cs.StorageV1().StorageClasses().Delete(sc.Name, nil))
+	}
 }
 
 func checkVolumeModeOfPath(pod *v1.Pod, volMode v1.PersistentVolumeMode, path string) {
@@ -163,267 +165,39 @@ func checkReadWriteToPath(pod *v1.Pod, volMode v1.PersistentVolumeMode, path str
 	}
 }
 
-func skipBlockSupportTestIfUnsupported(volMode v1.PersistentVolumeMode, isBlockSupported bool) {
-	if volMode == v1.PersistentVolumeBlock && !isBlockSupported {
-		framework.Skipf("Skip assertion for block test for block supported plugin.(Block unsupported)")
-	}
-}
-
-func skipBlockUnsupportTestUnlessUnspported(volMode v1.PersistentVolumeMode, isBlockSupported bool) {
-	if !(volMode == v1.PersistentVolumeBlock && !isBlockSupported) {
-		framework.Skipf("Skip assertion for block test for block unsupported plugin.(Block suppported or FileSystem test)")
-	}
-}
-
-var _ = utils.SIGDescribe("PersistentVolumes-volumeMode", func() {
-	f := framework.NewDefaultFramework("pv-volmode")
-	const (
-		pvTestSCPrefix = "pvtest"
-	)
-
+func testVolumeMode(
+	f *framework.Framework,
+	cs clientset.Interface,
+	config framework.VolumeTestConfig,
+	ns string,
+	scName string,
+	volBindMode storagev1.VolumeBindingMode,
+	volMode v1.PersistentVolumeMode,
+	pvSource v1.PersistentVolumeSource,
+	isBlockSupported bool,
+) {
 	var (
-		cs               clientset.Interface
-		ns               string
-		scName           string
-		isBlockSupported bool
-		serverIP         string
-		secret           *v1.Secret
-		serverPod        *v1.Pod
-		pvSource         v1.PersistentVolumeSource
-		sc               *storagev1.StorageClass
-		pod              *v1.Pod
-		pv               *v1.PersistentVolume
-		pvc              *v1.PersistentVolumeClaim
-		volMode          v1.PersistentVolumeMode
-		volBindMode      storagev1.VolumeBindingMode
+		sc  *storagev1.StorageClass
+		pod *v1.Pod
+		pv  *v1.PersistentVolume
+		pvc *v1.PersistentVolumeClaim
 	)
 
-	BeforeEach(func() {
-		cs = f.ClientSet
-		ns = f.Namespace.Name
-		volBindMode = storagev1.VolumeBindingImmediate
-	})
+	scConfig, pvConfig, pvcConfig := generateConfigsForStaticProvisionPVTest(scName, volBindMode, volMode, pvSource)
+	if !isBlockSupported && volMode == v1.PersistentVolumeBlock {
+		By("Checking if persistent volume with block mode fails to attach properly for unsupported plugin")
+		sc, pod, pv, pvc = createPVTestResourceWithFailure(cs, ns, scConfig, pvConfig, pvcConfig)
+		deletePVTestResource(f, cs, ns, sc, pod, pv, pvc)
+	} else {
+		sc, pod, pv, pvc = createPVTestResource(cs, ns, scConfig, pvConfig, pvcConfig)
+		defer deletePVTestResource(f, cs, ns, sc, pod, pv, pvc)
 
-	AssertCreateDeletePodAndReadWriteVolume := func() {
-		// For block supported plugins
-		It("should create sc, pod, pv, and pvc, read/write to the pv, and delete all created resources", func() {
-			skipBlockSupportTestIfUnsupported(volMode, isBlockSupported)
+		By("Checking if persistent volume exists as expected volume mode")
+		checkVolumeModeOfPath(pod, volMode, "/mnt/volume1")
 
-			scConfig, pvConfig, pvcConfig := generateConfigsForStaticProvisionPVTest(scName, volBindMode, volMode, pvSource)
-			sc, pod, pv, pvc = createPVTestResource(cs, ns, scConfig, pvConfig, pvcConfig)
-			defer deletePVTestResource(f, cs, ns, sc, pod, pv, pvc)
+		By("Checking if read/write to persistent volume works properly")
+		checkReadWriteToPath(pod, volMode, "/mnt/volume1")
 
-			By("Checking if persistent volume exists as expected volume mode")
-			checkVolumeModeOfPath(pod, volMode, "/mnt/volume1")
-
-			By("Checking if read/write to persistent volume works properly")
-			checkReadWriteToPath(pod, volMode, "/mnt/volume1")
-		})
-
-		// For block unsupported plugins
-		It("should fail to create pod by failing to mount volume", func() {
-			skipBlockUnsupportTestUnlessUnspported(volMode, isBlockSupported)
-
-			scConfig, pvConfig, pvcConfig := generateConfigsForStaticProvisionPVTest(scName, volBindMode, volMode, pvSource)
-			sc, pod, pv, pvc = createPVTestResourceWithFailure(cs, ns, scConfig, pvConfig, pvcConfig)
-			deletePVTestResource(f, cs, ns, sc, pod, pv, pvc)
-		})
-	}
-
-	verifyAll := func() {
-		AssertCreateDeletePodAndReadWriteVolume()
 		// TODO(mkimuram): Add more tests
 	}
-
-	Describe("NFS", func() {
-		const pvTestNFSSCSuffix = "nfs"
-
-		BeforeEach(func() {
-			isBlockSupported = false
-			scName = fmt.Sprintf("%v-%v-%v", pvTestSCPrefix, ns, pvTestNFSSCSuffix)
-			_, serverPod, serverIP = framework.NewNFSServer(cs, ns, []string{})
-
-			pvSource = v1.PersistentVolumeSource{
-				NFS: &v1.NFSVolumeSource{
-					Server:   serverIP,
-					Path:     "/",
-					ReadOnly: false,
-				},
-			}
-		})
-
-		AfterEach(func() {
-			framework.Logf("AfterEach: deleting NFS server pod %q...", serverPod.Name)
-			err := framework.DeletePodWithWait(f, cs, serverPod)
-			Expect(err).NotTo(HaveOccurred(), "AfterEach: NFS server pod failed to delete")
-		})
-
-		Context("FileSystem volume Test", func() {
-			BeforeEach(func() {
-				volMode = v1.PersistentVolumeFilesystem
-			})
-
-			verifyAll()
-		})
-
-		Context("Block volume Test[Feature:BlockVolume]", func() {
-			BeforeEach(func() {
-				volMode = v1.PersistentVolumeBlock
-			})
-
-			verifyAll()
-		})
-	})
-
-	Describe("iSCSI [Feature:Volumes]", func() {
-		const pvTestISCSISCSuffix = "iscsi"
-
-		BeforeEach(func() {
-			isBlockSupported = true
-			scName = fmt.Sprintf("%v-%v-%v", pvTestSCPrefix, ns, pvTestISCSISCSuffix)
-			_, serverPod, serverIP = framework.NewISCSIServer(cs, ns)
-
-			pvSource = v1.PersistentVolumeSource{
-				ISCSI: &v1.ISCSIPersistentVolumeSource{
-					TargetPortal: serverIP + ":3260",
-					IQN:          "iqn.2003-01.org.linux-iscsi.f21.x8664:sn.4b0aae584f7c",
-					Lun:          0,
-				},
-			}
-		})
-
-		AfterEach(func() {
-			framework.Logf("AfterEach: deleting iSCSI server pod %q...", serverPod.Name)
-			err := framework.DeletePodWithWait(f, cs, serverPod)
-			Expect(err).NotTo(HaveOccurred(), "AfterEach: iSCSI server pod failed to delete")
-		})
-
-		Context("FileSystem volume Test", func() {
-			BeforeEach(func() {
-				volMode = v1.PersistentVolumeFilesystem
-			})
-
-			verifyAll()
-		})
-
-		Context("Block volume Test[Feature:BlockVolume]", func() {
-			BeforeEach(func() {
-				volMode = v1.PersistentVolumeBlock
-			})
-
-			verifyAll()
-		})
-	})
-
-	Describe("Ceph-RBD [Feature:Volumes]", func() {
-		const pvTestRBDSCSuffix = "rbd"
-
-		BeforeEach(func() {
-			isBlockSupported = true
-			scName = fmt.Sprintf("%v-%v-%v", pvTestSCPrefix, ns, pvTestRBDSCSuffix)
-			_, serverPod, secret, serverIP = framework.NewRBDServer(cs, ns)
-
-			framework.Logf("namespace: %v, secret.Name: %v", ns, secret.Name)
-			pvSource = v1.PersistentVolumeSource{
-				RBD: &v1.RBDPersistentVolumeSource{
-					CephMonitors: []string{serverIP},
-					RBDPool:      "rbd",
-					RBDImage:     "foo",
-					RadosUser:    "admin",
-					SecretRef: &v1.SecretReference{
-						Name:      secret.Name,
-						Namespace: ns,
-					},
-					ReadOnly: false,
-				},
-			}
-		})
-
-		AfterEach(func() {
-			framework.Logf("AfterEach: deleting Ceph-RDB server secret %q...", secret.Name)
-			secErr := cs.CoreV1().Secrets(ns).Delete(secret.Name, &metav1.DeleteOptions{})
-			framework.Logf("AfterEach: deleting Ceph-RDB server pod %q...", serverPod.Name)
-			err := framework.DeletePodWithWait(f, cs, serverPod)
-			if secErr != nil || err != nil {
-				if secErr != nil {
-					framework.Logf("AfterEach: Ceph-RDB delete secret failed: %v", secErr)
-				}
-				if err != nil {
-					framework.Logf("AfterEach: Ceph-RDB server pod delete failed: %v", err)
-				}
-				framework.Failf("AfterEach: cleanup failed")
-			}
-		})
-
-		Context("FileSystem volume Test", func() {
-			BeforeEach(func() {
-				volMode = v1.PersistentVolumeFilesystem
-			})
-
-			verifyAll()
-		})
-
-		Context("Block volume Test[Feature:BlockVolume]", func() {
-			BeforeEach(func() {
-				volMode = v1.PersistentVolumeBlock
-			})
-
-			verifyAll()
-		})
-	})
-
-	Describe("CephFS [Feature:Volumes]", func() {
-		const pvTestCephFSSCSuffix = "cephfs"
-
-		BeforeEach(func() {
-			isBlockSupported = false
-			scName = fmt.Sprintf("%v-%v-%v", pvTestSCPrefix, ns, pvTestCephFSSCSuffix)
-			_, serverPod, secret, serverIP = framework.NewRBDServer(cs, ns)
-
-			pvSource = v1.PersistentVolumeSource{
-				CephFS: &v1.CephFSPersistentVolumeSource{
-					Monitors: []string{serverIP + ":6789"},
-					User:     "kube",
-					SecretRef: &v1.SecretReference{
-						Name:      secret.Name,
-						Namespace: ns,
-					},
-					ReadOnly: false,
-				},
-			}
-		})
-
-		AfterEach(func() {
-			framework.Logf("AfterEach: deleting CephFS server secret %q...", secret.Name)
-			secErr := cs.CoreV1().Secrets(ns).Delete(secret.Name, &metav1.DeleteOptions{})
-			framework.Logf("AfterEach: deleting CephFS server pod %q...", serverPod.Name)
-			err := framework.DeletePodWithWait(f, cs, serverPod)
-			if secErr != nil || err != nil {
-				if secErr != nil {
-					framework.Logf("AfterEach: CephFS delete secret failed: %v", secErr)
-				}
-				if err != nil {
-					framework.Logf("AfterEach: CephFS server pod delete failed: %v", err)
-				}
-				framework.Failf("AfterEach: cleanup failed")
-			}
-		})
-
-		Context("FileSystem volume Test", func() {
-			BeforeEach(func() {
-				volMode = v1.PersistentVolumeFilesystem
-			})
-
-			verifyAll()
-		})
-
-		Context("Block volume Test[Feature:BlockVolume]", func() {
-			BeforeEach(func() {
-				volMode = v1.PersistentVolumeBlock
-			})
-
-			verifyAll()
-		})
-	})
-
-})
+}
