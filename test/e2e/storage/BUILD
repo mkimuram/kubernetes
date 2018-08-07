@@ -11,6 +11,7 @@ go_library(
         "generic_persistent_volume-disruptive.go",
         "mounted_volume_resize.go",
         "nfs_persistent_volume-disruptive.go",
+        "non_csi_volumes.go",
         "pd.go",
         "persistent_volumes.go",
         "persistent_volumes-gce.go",

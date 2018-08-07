@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -61,24 +62,15 @@ type volSource interface {
 }
 
 var initVolSources = map[string]func() volSource{
-	"hostPath":         initHostpath,
-	"hostPathSymlink":  initHostpathSymlink,
-	"emptyDir":         initEmptydir,
-	"gcePDPVC":         initGCEPDPVC,
-	"gcePDPartitioned": initGCEPDPartition,
-	"nfs":              initNFS,
-	"nfsPVC":           initNFSPVC,
-	"gluster":          initGluster,
+	"gcePDPVC": initGCEPDPVC,
 }
 
 var _ = utils.SIGDescribe("Subpath", func() {
 	var (
-		subPath           string
-		subPathDir        string
-		filePathInSubpath string
-		filePathInVolume  string
-		pod               *v1.Pod
-		vol               volSource
+		vol volSource
+
+		testInput subPathTestInput
+		volInfo   volInfo
 	)
 
 	f := framework.NewDefaultFramework("subpath")
@@ -103,44 +95,24 @@ var _ = utils.SIGDescribe("Subpath", func() {
 
 		})
 
-		/*
-		  Release : v1.12
-		  Testname: SubPath: Reading content from a secret volume.
-		  Description: Containers in a pod can read content from a secret mounted volume which was configured with a subpath.
-		*/
-		framework.ConformanceIt("should support subpaths with secret pod", func() {
+		It("should support subpaths with secret pod", func() {
 			pod := testPodSubpath(f, "secret-key", "secret", &v1.VolumeSource{Secret: &v1.SecretVolumeSource{SecretName: "my-secret"}}, privilegedSecurityContext)
 			testBasicSubpath(f, "secret-value", pod)
 		})
 
-		/*
-		  Release : v1.12
-		  Testname: SubPath: Reading content from a configmap volume.
-		  Description: Containers in a pod can read content from a configmap mounted volume which was configured with a subpath.
-		*/
-		framework.ConformanceIt("should support subpaths with configmap pod", func() {
+		It("should support subpaths with configmap pod", func() {
 			pod := testPodSubpath(f, "configmap-key", "configmap", &v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{LocalObjectReference: v1.LocalObjectReference{Name: "my-configmap"}}}, privilegedSecurityContext)
 			testBasicSubpath(f, "configmap-value", pod)
 		})
 
-		/*
-		  Release : v1.12
-		  Testname: SubPath: Reading content from a configmap volume.
-		  Description: Containers in a pod can read content from a configmap mounted volume which was configured with a subpath and also using a mountpath that is a specific file.
-		*/
-		framework.ConformanceIt("should support subpaths with configmap pod with mountPath of existing file", func() {
+		It("should support subpaths with configmap pod with mountPath of existing file", func() {
 			pod := testPodSubpath(f, "configmap-key", "configmap", &v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{LocalObjectReference: v1.LocalObjectReference{Name: "my-configmap"}}}, privilegedSecurityContext)
 			file := "/etc/resolv.conf"
 			pod.Spec.Containers[0].VolumeMounts[0].MountPath = file
 			testBasicSubpathFile(f, "configmap-value", pod, file)
 		})
 
-		/*
-		  Release : v1.12
-		  Testname: SubPath: Reading content from a downwardAPI volume.
-		  Description: Containers in a pod can read content from a downwardAPI mounted volume which was configured with a subpath.
-		*/
-		framework.ConformanceIt("should support subpaths with downward pod", func() {
+		It("should support subpaths with downward pod", func() {
 			pod := testPodSubpath(f, "downward/podname", "downwardAPI", &v1.VolumeSource{
 				DownwardAPI: &v1.DownwardAPIVolumeSource{
 					Items: []v1.DownwardAPIVolumeFile{{Path: "downward/podname", FieldRef: &v1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "metadata.name"}}},
@@ -149,12 +121,7 @@ var _ = utils.SIGDescribe("Subpath", func() {
 			testBasicSubpath(f, pod.Name, pod)
 		})
 
-		/*
-		  Release : v1.12
-		  Testname: SubPath: Reading content from a projected volume.
-		  Description: Containers in a pod can read content from a projected mounted volume which was configured with a subpath.
-		*/
-		framework.ConformanceIt("should support subpaths with projected pod", func() {
+		It("should support subpaths with projected pod", func() {
 			pod := testPodSubpath(f, "projected/configmap-key", "projected", &v1.VolumeSource{
 				Projected: &v1.ProjectedVolumeSource{
 					Sources: []v1.VolumeProjection{
@@ -177,194 +144,462 @@ var _ = utils.SIGDescribe("Subpath", func() {
 			BeforeEach(func() {
 				By(fmt.Sprintf("Initializing %s volume", curVolType))
 				vol = curVolInit()
-				subPath = f.Namespace.Name
-				subPathDir = filepath.Join(volumePath, subPath)
-				filePathInSubpath = filepath.Join(volumePath, fileName)
-				filePathInVolume = filepath.Join(subPathDir, fileName)
-				volInfo := vol.createVolume(f)
-				pod = testPodSubpath(f, subPath, curVolType, volInfo.source, volInfo.privilegedSecurityContext)
-				pod.Spec.NodeName = volInfo.node
+				subPath := f.Namespace.Name
+				subPathDir := filepath.Join(volumePath, subPath)
+				volInfo = vol.createVolume(f)
+
+				testInput = subPathTestInput{
+					f:                 f,
+					subPathDir:        subPathDir,
+					filePathInSubpath: filepath.Join(volumePath, fileName),
+					filePathInVolume:  filepath.Join(subPathDir, fileName),
+					volType:           curVolType,
+					pod:               testPodSubpath(f, subPath, curVolType, volInfo.source, volInfo.privilegedSecurityContext),
+					roVol:             vol.getReadOnlyVolumeSpec(),
+				}
+
+				testInput.pod.Spec.NodeName = volInfo.node
 			})
 
 			AfterEach(func() {
 				By("Deleting pod")
-				err := framework.DeletePodWithWait(f, f.ClientSet, pod)
+				err := framework.DeletePodWithWait(f, f.ClientSet, testInput.pod)
 				Expect(err).ToNot(HaveOccurred(), "while deleting pod")
 
 				By("Cleaning up volume")
 				vol.cleanupVolume(f)
 			})
 
-			It("should support non-existent path", func() {
-				// Write the file in the subPath from container 0
-				setWriteCommand(filePathInSubpath, &pod.Spec.Containers[0])
-
-				// Read it from outside the subPath from container 1
-				testReadFile(f, filePathInVolume, pod, 1)
-			})
-
-			It("should support existing directory", func() {
-				// Create the directory
-				setInitCommand(pod, fmt.Sprintf("mkdir -p %s", subPathDir))
-
-				// Write the file in the subPath from container 0
-				setWriteCommand(filePathInSubpath, &pod.Spec.Containers[0])
-
-				// Read it from outside the subPath from container 1
-				testReadFile(f, filePathInVolume, pod, 1)
-			})
-
-			It("should support existing single file", func() {
-				// Create the file in the init container
-				setInitCommand(pod, fmt.Sprintf("mkdir -p %s; echo \"mount-tester new file\" > %s", subPathDir, filePathInVolume))
-
-				// Read it from inside the subPath from container 0
-				testReadFile(f, filePathInSubpath, pod, 0)
-			})
-
-			It("should support file as subpath", func() {
-				// Create the file in the init container
-				setInitCommand(pod, fmt.Sprintf("echo %s > %s", f.Namespace.Name, subPathDir))
-
-				testBasicSubpath(f, f.Namespace.Name, pod)
-			})
-
-			It("should fail if subpath directory is outside the volume [Slow]", func() {
-				// Create the subpath outside the volume
-				setInitCommand(pod, fmt.Sprintf("ln -s /bin %s", subPathDir))
-
-				// Pod should fail
-				testPodFailSubpath(f, pod)
-			})
-
-			It("should fail if subpath file is outside the volume [Slow]", func() {
-				// Create the subpath outside the volume
-				setInitCommand(pod, fmt.Sprintf("ln -s /bin/sh %s", subPathDir))
-
-				// Pod should fail
-				testPodFailSubpath(f, pod)
-			})
-
-			It("should fail if non-existent subpath is outside the volume [Slow]", func() {
-				// Create the subpath outside the volume
-				setInitCommand(pod, fmt.Sprintf("ln -s /bin/notanexistingpath %s", subPathDir))
-
-				// Pod should fail
-				testPodFailSubpath(f, pod)
-			})
-
-			It("should fail if subpath with backstepping is outside the volume [Slow]", func() {
-				// Create the subpath outside the volume
-				setInitCommand(pod, fmt.Sprintf("ln -s ../ %s", subPathDir))
-
-				// Pod should fail
-				testPodFailSubpath(f, pod)
-			})
-
-			It("should support creating multiple subpath from same volumes [Slow]", func() {
-				subpathDir1 := filepath.Join(volumePath, "subpath1")
-				subpathDir2 := filepath.Join(volumePath, "subpath2")
-				filepath1 := filepath.Join("/test-subpath1", fileName)
-				filepath2 := filepath.Join("/test-subpath2", fileName)
-				setInitCommand(pod, fmt.Sprintf("mkdir -p %s; mkdir -p %s", subpathDir1, subpathDir2))
-
-				addSubpathVolumeContainer(&pod.Spec.Containers[0], v1.VolumeMount{
-					Name:      volumeName,
-					MountPath: "/test-subpath1",
-					SubPath:   "subpath1",
-				})
-				addSubpathVolumeContainer(&pod.Spec.Containers[0], v1.VolumeMount{
-					Name:      volumeName,
-					MountPath: "/test-subpath2",
-					SubPath:   "subpath2",
-				})
-
-				addMultipleWrites(&pod.Spec.Containers[0], filepath1, filepath2)
-				testMultipleReads(f, pod, 0, filepath1, filepath2)
-			})
-
-			It("should support restarting containers using directory as subpath [Slow]", func() {
-				// Create the directory
-				setInitCommand(pod, fmt.Sprintf("mkdir -p %v; touch %v", subPathDir, probeFilePath))
-
-				testPodContainerRestart(f, pod)
-			})
-
-			It("should support restarting containers using file as subpath [Slow]", func() {
-				// Create the file
-				setInitCommand(pod, fmt.Sprintf("touch %v; touch %v", subPathDir, probeFilePath))
-
-				testPodContainerRestart(f, pod)
-			})
-
-			It("should unmount if pod is gracefully deleted while kubelet is down [Disruptive][Slow]", func() {
-				testSubpathReconstruction(f, pod, false)
-			})
-
-			It("should unmount if pod is force deleted while kubelet is down [Disruptive][Slow]", func() {
-				if curVolType == "hostPath" || curVolType == "hostPathSymlink" {
-					framework.Skipf("%s volume type does not support reconstruction, skipping", curVolType)
-				}
-				testSubpathReconstruction(f, pod, true)
-			})
-
-			It("should support readOnly directory specified in the volumeMount", func() {
-				// Create the directory
-				setInitCommand(pod, fmt.Sprintf("mkdir -p %s", subPathDir))
-
-				// Write the file in the volume from container 1
-				setWriteCommand(filePathInVolume, &pod.Spec.Containers[1])
-
-				// Read it from inside the subPath from container 0
-				pod.Spec.Containers[0].VolumeMounts[0].ReadOnly = true
-				testReadFile(f, filePathInSubpath, pod, 0)
-			})
-
-			It("should support readOnly file specified in the volumeMount", func() {
-				// Create the file
-				setInitCommand(pod, fmt.Sprintf("touch %s", subPathDir))
-
-				// Write the file in the volume from container 1
-				setWriteCommand(subPathDir, &pod.Spec.Containers[1])
-
-				// Read it from inside the subPath from container 0
-				pod.Spec.Containers[0].VolumeMounts[0].ReadOnly = true
-				testReadFile(f, volumePath, pod, 0)
-			})
-
-			It("should support existing directories when readOnly specified in the volumeSource", func() {
-				roVol := vol.getReadOnlyVolumeSpec()
-				if roVol == nil {
-					framework.Skipf("Volume type %v doesn't support readOnly source", curVolType)
-				}
-
-				// Initialize content in the volume while it's writable
-				initVolumeContent(f, pod, filePathInVolume, filePathInSubpath)
-
-				// Set volume source to read only
-				pod.Spec.Volumes[0].VolumeSource = *roVol
-
-				// Read it from inside the subPath from container 0
-				testReadFile(f, filePathInSubpath, pod, 0)
-			})
-
-			It("should fail for new directories when readOnly specified in the volumeSource", func() {
-				roVol := vol.getReadOnlyVolumeSpec()
-				if roVol == nil {
-					framework.Skipf("Volume type %v doesn't support readOnly source", curVolType)
-				}
-
-				// Set volume source to read only
-				pod.Spec.Volumes[0].VolumeSource = *roVol
-
-				// Pod should fail
-				testPodFailSubpathError(f, pod, "")
-			})
+			testSubPath(&testInput)
 		})
 	}
+})
+
+type subPathTestCase struct {
+	testPatterns map[string]testPattern
+}
+
+func initSubPathTestCase() testCase {
+	return &subPathTestCase{
+		testPatterns: map[string]testPattern{
+			"Volume": {
+				testVolType: inlineVolume,
+			},
+			"Static PV": {
+				testVolType: staticPV,
+			},
+			"Dynamic PV": {
+				testVolType: dynamicPV,
+			},
+		},
+	}
+}
+
+func (s *subPathTestCase) getTestPatterns() map[string]testPattern {
+	return s.testPatterns
+}
+
+func (s *subPathTestCase) initTestResource() testResource {
+	return &subPathTestResource{}
+}
+
+func (s *subPathTestCase) createTestInput(
+	testPattern testPattern,
+	testResource testResource,
+) testInput {
+	if r, ok := testResource.(*subPathTestResource); ok {
+		driver := r.driver
+		driverInfo := driver.getDriverInfo()
+		f := driverInfo.f
+		subPath := f.Namespace.Name
+		subPathDir := filepath.Join(volumePath, subPath)
+
+		return subPathTestInput{
+			f:                 f,
+			subPathDir:        subPathDir,
+			filePathInSubpath: filepath.Join(volumePath, fileName),
+			filePathInVolume:  filepath.Join(subPathDir, fileName),
+			volType:           r.volType,
+			pod:               r.pod,
+			roVol:             r.roVolSource,
+		}
+	}
+
+	framework.Failf("Fail to convert testResource to subPathTestResource")
+	return nil
+}
+
+func (s *subPathTestCase) getTestFunc() func(*testInput) {
+	return testSubPathWithTestInput
+}
+
+func testSubPathWithTestInput(testInput *testInput) {
+	Context("-", func() {
+		var (
+			t  subPathTestInput
+			ok bool
+		)
+
+		BeforeEach(func() {
+			testInputVal := *testInput
+			if t, ok = testInputVal.(subPathTestInput); !ok {
+				framework.Failf("Fail to convert testInput to subPathTestInput")
+			}
+		})
+
+		testSubPath(&t)
+	})
+}
+
+type subPathTestResource struct {
+	driver      testDriver
+	volType     string
+	volSource   *v1.VolumeSource
+	pvc         *v1.PersistentVolumeClaim
+	pv          *v1.PersistentVolume
+	roVolSource *v1.VolumeSource
+	sc          *storagev1.StorageClass
+	pod         *v1.Pod
+}
+
+func (s *subPathTestResource) setup(driver testDriver, testPattern testPattern) {
+	s.driver = driver
+	driverInfo := s.driver.getDriverInfo()
+	f := driverInfo.f
+	cs := f.ClientSet
+	fsType := testPattern.fsType
+
+	skipCreatingResourceForProvider(testPattern)
+
+	if testPattern.testVolType == inlineVolume {
+		framework.Logf("Creating resouce for inline volume")
+		if inlineVolumeTestDriver, ok := driver.(inlineVolumeTestDriver); ok {
+			s.volType = driverInfo.name
+			s.volSource = inlineVolumeTestDriver.getVolumeSource(false, fsType)
+			s.roVolSource = inlineVolumeTestDriver.getVolumeSource(true, fsType)
+		}
+	} else if testPattern.testVolType == staticPV {
+		framework.Logf("Creating resouce for static PV")
+		if staticPVTestDriver, ok := driver.(staticPVTestDriver); ok {
+			s.volType = fmt.Sprintf("%sPVC", driverInfo.name)
+			pvSource := staticPVTestDriver.getPersistentVolumeSource(false, fsType)
+			if pvSource != nil {
+				s.volSource, s.pv, s.pvc = CreateVolumeSourceWithPVCPV(f, driverInfo.name, pvSource, false)
+				s.roVolSource = &v1.VolumeSource{
+					PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+						ClaimName: s.pvc.Name,
+						ReadOnly:  true,
+					},
+				}
+			}
+		}
+	} else if testPattern.testVolType == dynamicPV {
+		framework.Logf("Creating resouce for dynamic PV")
+		if dynamicPVTestDriver, ok := driver.(dynamicPVTestDriver); ok {
+			claimSize := "2Gi"
+			s.volType = fmt.Sprintf("%sDynamicPVC", driverInfo.name)
+			s.sc = dynamicPVTestDriver.getDynamicProvisionStorageClass(fsType)
+
+			By("creating a StorageClass " + s.sc.Name)
+			var err error
+			s.sc, err = cs.StorageV1().StorageClasses().Create(s.sc)
+			Expect(err).NotTo(HaveOccurred())
+
+			if s.sc != nil {
+				framework.Logf("SC: %v", s.sc)
+				s.volSource, s.pv, s.pvc = CreateVolumeSourceWithPVCPVFromDynamicProvisionSC(
+					f, driverInfo.name, claimSize, s.sc, false, nil)
+				s.roVolSource = &v1.VolumeSource{
+					PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+						ClaimName: s.pvc.Name,
+						ReadOnly:  true,
+					},
+				}
+			}
+		}
+	}
+
+	if s.volSource == nil {
+		framework.Skipf("Driver %s doesn't support %v -- skipping", driverInfo.name, testPattern.testVolType)
+	}
+
+	subPath := f.Namespace.Name
+	config := driverInfo.config
+	s.pod = testPodSubpath(f, subPath, s.volType, s.volSource, driverInfo.privilegedSecurityContext)
+	s.pod.Spec.NodeName = config.ClientNodeName
+	s.pod.Spec.NodeSelector = config.NodeSelector
+}
+
+func (s *subPathTestResource) cleanup() {
+	driverInfo := s.driver.getDriverInfo()
+	f := driverInfo.f
+
+	By("Deleting pod")
+	err := framework.DeletePodWithWait(f, f.ClientSet, s.pod)
+	Expect(err).ToNot(HaveOccurred(), "while deleting pod")
+
+	if s.pvc != nil || s.pv != nil {
+		By("Deleting pv and pvc")
+		if errs := framework.PVPVCCleanup(f.ClientSet, f.Namespace.Name, s.pv, s.pvc); len(errs) != 0 {
+			framework.Failf("Failed to delete PVC or PV: %v", utilerrors.NewAggregate(errs))
+		}
+	}
+
+	if s.sc != nil {
+		By("Deleting sc")
+		deleteStorageClass(f.ClientSet, s.sc.Name)
+	}
+}
+
+type subPathTestInput struct {
+	f                 *framework.Framework
+	subPathDir        string
+	filePathInSubpath string
+	filePathInVolume  string
+	volType           string
+	pod               *v1.Pod
+	roVol             *v1.VolumeSource
+}
+
+func (s subPathTestInput) isTestInput() bool {
+	return true
+}
+
+func testSubPath(t *subPathTestInput) {
+	It("should supports non-existent path", func() {
+		// Write the file in the subPath from container 0
+		setWriteCommand(t.filePathInSubpath, &t.pod.Spec.Containers[0])
+
+		// Read it from outside the subPath from container 1
+		testReadFile(t.f, t.filePathInVolume, t.pod, 1)
+	})
+
+	It("should support existing directory", func() {
+		// Create the directory
+		setInitCommand(t.pod, fmt.Sprintf("mkdir -p %s", t.subPathDir))
+
+		// Write the file in the subPath from container 0
+		setWriteCommand(t.filePathInSubpath, &t.pod.Spec.Containers[0])
+
+		// Read it from outside the subPath from container 1
+		testReadFile(t.f, t.filePathInVolume, t.pod, 1)
+	})
+
+	It("should support existing single file", func() {
+		// Create the file in the init container
+		setInitCommand(t.pod, fmt.Sprintf("mkdir -p %s; echo \"mount-tester new file\" > %s", t.subPathDir, t.filePathInVolume))
+
+		// Read it from inside the subPath from container 0
+		testReadFile(t.f, t.filePathInSubpath, t.pod, 0)
+	})
+
+	It("should support file as subpath", func() {
+		// Create the file in the init container
+		setInitCommand(t.pod, fmt.Sprintf("echo %s > %s", t.f.Namespace.Name, t.subPathDir))
+
+		testBasicSubpath(t.f, t.f.Namespace.Name, t.pod)
+	})
+
+	It("should fail if subpath directory is outside the volume [Slow]", func() {
+		// Create the subpath outside the volume
+		setInitCommand(t.pod, fmt.Sprintf("ln -s /bin %s", t.subPathDir))
+
+		// Pod should fail
+		testPodFailSubpath(t.f, t.pod)
+	})
+
+	It("should fail if subpath file is outside the volume [Slow]", func() {
+		// Create the subpath outside the volume
+		setInitCommand(t.pod, fmt.Sprintf("ln -s /bin/sh %s", t.subPathDir))
+
+		// Pod should fail
+		testPodFailSubpath(t.f, t.pod)
+	})
+
+	It("should fail if non-existent subpath is outside the volume [Slow]", func() {
+		// Create the subpath outside the volume
+		setInitCommand(t.pod, fmt.Sprintf("ln -s /bin/notanexistingpath %s", t.subPathDir))
+
+		// Pod should fail
+		testPodFailSubpath(t.f, t.pod)
+	})
+
+	It("should fail if subpath with backstepping is outside the volume [Slow]", func() {
+		// Create the subpath outside the volume
+		setInitCommand(t.pod, fmt.Sprintf("ln -s ../ %s", t.subPathDir))
+
+		// Pod should fail
+		testPodFailSubpath(t.f, t.pod)
+	})
+
+	It("should support creating multiple subpath from same volumes [Slow]", func() {
+		subpathDir1 := filepath.Join(volumePath, "subpath1")
+		subpathDir2 := filepath.Join(volumePath, "subpath2")
+		filepath1 := filepath.Join("/test-subpath1", fileName)
+		filepath2 := filepath.Join("/test-subpath2", fileName)
+		setInitCommand(t.pod, fmt.Sprintf("mkdir -p %s; mkdir -p %s", subpathDir1, subpathDir2))
+
+		addSubpathVolumeContainer(&t.pod.Spec.Containers[0], v1.VolumeMount{
+			Name:      volumeName,
+			MountPath: "/test-subpath1",
+			SubPath:   "subpath1",
+		})
+		addSubpathVolumeContainer(&t.pod.Spec.Containers[0], v1.VolumeMount{
+			Name:      volumeName,
+			MountPath: "/test-subpath2",
+			SubPath:   "subpath2",
+		})
+
+		addMultipleWrites(&t.pod.Spec.Containers[0], filepath1, filepath2)
+		testMultipleReads(t.f, t.pod, 0, filepath1, filepath2)
+	})
+
+	It("should support restarting containers using directory as subpath [Slow]", func() {
+		// Create the directory
+		setInitCommand(t.pod, fmt.Sprintf("mkdir -p %v; touch %v", t.subPathDir, probeFilePath))
+
+		testPodContainerRestart(t.f, t.pod)
+	})
+
+	It("should support restarting containers using file as subpath [Slow]", func() {
+		// Create the file
+		setInitCommand(t.pod, fmt.Sprintf("touch %v; touch %v", t.subPathDir, probeFilePath))
+
+		testPodContainerRestart(t.f, t.pod)
+	})
+
+	It("should unmount if pod is gracefully deleted while kubelet is down [Disruptive][Slow]", func() {
+		testSubpathReconstruction(t.f, t.pod, false)
+	})
+
+	It("should unmount if pod is force deleted while kubelet is down [Disruptive][Slow]", func() {
+		if t.volType == "hostPath" || t.volType == "hostPathSymlink" {
+			framework.Skipf("%s volume type does not support reconstruction, skipping", t.volType)
+		}
+		testSubpathReconstruction(t.f, t.pod, true)
+	})
+
+	It("should support readOnly directory specified in the volumeMount", func() {
+		// Create the directory
+		setInitCommand(t.pod, fmt.Sprintf("mkdir -p %s", t.subPathDir))
+
+		// Write the file in the volume from container 1
+		setWriteCommand(t.filePathInVolume, &t.pod.Spec.Containers[1])
+
+		// Read it from inside the subPath from container 0
+		t.pod.Spec.Containers[0].VolumeMounts[0].ReadOnly = true
+		testReadFile(t.f, t.filePathInSubpath, t.pod, 0)
+	})
+
+	It("should support readOnly file specified in the volumeMount", func() {
+		// Create the file
+		setInitCommand(t.pod, fmt.Sprintf("touch %s", t.subPathDir))
+
+		// Write the file in the volume from container 1
+		setWriteCommand(t.subPathDir, &t.pod.Spec.Containers[1])
+
+		// Read it from inside the subPath from container 0
+		t.pod.Spec.Containers[0].VolumeMounts[0].ReadOnly = true
+		testReadFile(t.f, volumePath, t.pod, 0)
+	})
+
+	It("should support existing directories when readOnly specified in the volumeSource", func() {
+		if t.roVol == nil {
+			framework.Skipf("Volume type %v doesn't support readOnly source", t.volType)
+		}
+
+		// Initialize content in the volume while it's writable
+		initVolumeContent(t.f, t.pod, t.filePathInVolume, t.filePathInSubpath)
+
+		t.pod.Spec.Volumes[0].VolumeSource = *t.roVol
+
+		// Read it from inside the subPath from container 0
+		testReadFile(t.f, t.filePathInSubpath, t.pod, 0)
+	})
+
+	It("should fail for new directories when readOnly specified in the volumeSource", func() {
+		if t.roVol == nil {
+			framework.Skipf("Volume type %v doesn't support readOnly source", t.volType)
+		}
+
+		t.pod.Spec.Volumes[0].VolumeSource = *t.roVol
+		// Pod should fail
+		testPodFailSubpathError(t.f, t.pod, "")
+	})
 
 	// TODO: add a test case for the same disk with two partitions
-})
+}
+
+func CreateVolumeSourceWithPVCPV(
+	f *framework.Framework,
+	name string,
+	pvSource *v1.PersistentVolumeSource,
+	readOnly bool,
+) (*v1.VolumeSource, *v1.PersistentVolume, *v1.PersistentVolumeClaim) {
+	pvConfig := framework.PersistentVolumeConfig{
+		NamePrefix:       fmt.Sprintf("%s-", name),
+		StorageClassName: f.Namespace.Name,
+		PVSource:         *pvSource,
+	}
+	pvcConfig := framework.PersistentVolumeClaimConfig{
+		StorageClassName: &f.Namespace.Name,
+	}
+
+	framework.Logf("Creating PVC and PV")
+	pv, pvc, err := framework.CreatePVCPV(f.ClientSet, pvConfig, pvcConfig, f.Namespace.Name, false)
+	Expect(err).NotTo(HaveOccurred(), "PVC, PV creation failed")
+
+	err = framework.WaitOnPVandPVC(f.ClientSet, f.Namespace.Name, pv, pvc)
+	Expect(err).NotTo(HaveOccurred(), "PVC, PV failed to bind")
+
+	volSource := &v1.VolumeSource{
+		PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+			ClaimName: pvc.Name,
+			ReadOnly:  readOnly,
+		},
+	}
+	return volSource, pv, pvc
+}
+
+func CreateVolumeSourceWithPVCPVFromDynamicProvisionSC(
+	f *framework.Framework,
+	name string,
+	claimSize string,
+	sc *storagev1.StorageClass,
+	readOnly bool,
+	volMode *v1.PersistentVolumeMode,
+) (*v1.VolumeSource, *v1.PersistentVolume, *v1.PersistentVolumeClaim) {
+	cs := f.ClientSet
+	ns := f.Namespace.Name
+
+	By("creating a claim")
+	pvc := getClaim(claimSize, ns)
+	pvc.Spec.StorageClassName = &sc.Name
+	if volMode != nil {
+		pvc.Spec.VolumeMode = volMode
+	}
+
+	var err error
+	pvc, err = cs.CoreV1().PersistentVolumeClaims(ns).Create(pvc)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = framework.WaitForPersistentVolumeClaimPhase(v1.ClaimBound, cs, pvc.Namespace, pvc.Name, framework.Poll, framework.ClaimProvisionTimeout)
+	Expect(err).NotTo(HaveOccurred())
+
+	pvc, err = cs.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, metav1.GetOptions{})
+	Expect(err).NotTo(HaveOccurred())
+
+	pv, err := cs.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
+	Expect(err).NotTo(HaveOccurred())
+
+	volSource := &v1.VolumeSource{
+		PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+			ClaimName: pvc.Name,
+			ReadOnly:  readOnly,
+		},
+	}
+	return volSource, pv, pvc
+}
 
 func testBasicSubpath(f *framework.Framework, contents string, pod *v1.Pod) {
 	testBasicSubpathFile(f, contents, pod, volumePath)
@@ -698,134 +933,6 @@ func podContainerExec(pod *v1.Pod, containerIndex int, bashExec string) (string,
 	return framework.RunKubectl("exec", fmt.Sprintf("--namespace=%s", pod.Namespace), pod.Name, "--container", pod.Spec.Containers[containerIndex].Name, "--", "/bin/sh", "-c", bashExec)
 }
 
-type hostpathSource struct {
-}
-
-func initHostpath() volSource {
-	return &hostpathSource{}
-}
-
-func (s *hostpathSource) createVolume(f *framework.Framework) volInfo {
-	return volInfo{
-		source: &v1.VolumeSource{
-			HostPath: &v1.HostPathVolumeSource{
-				Path: "/tmp",
-			},
-		},
-		privilegedSecurityContext: true,
-	}
-}
-
-func (s *hostpathSource) getReadOnlyVolumeSpec() *v1.VolumeSource {
-	return nil
-}
-
-func (s *hostpathSource) cleanupVolume(f *framework.Framework) {
-}
-
-type hostpathSymlinkSource struct {
-}
-
-func initHostpathSymlink() volSource {
-	return &hostpathSymlinkSource{}
-}
-
-func (s *hostpathSymlinkSource) createVolume(f *framework.Framework) volInfo {
-	nodes := framework.GetReadySchedulableNodesOrDie(f.ClientSet)
-	Expect(len(nodes.Items)).NotTo(BeZero(), "No available nodes for scheduling")
-
-	node0 := &nodes.Items[0]
-	sourcePath := fmt.Sprintf("/tmp/%v", f.Namespace.Name)
-	targetPath := fmt.Sprintf("/tmp/%v-link", f.Namespace.Name)
-	cmd := fmt.Sprintf("mkdir %v -m 777 && ln -s %v %v", sourcePath, sourcePath, targetPath)
-	privileged := true
-
-	// Launch pod to initialize hostpath directory and symlink
-	pod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: fmt.Sprintf("hostpath-symlink-prep-%s", f.Namespace.Name),
-		},
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Name:    fmt.Sprintf("init-volume-%s", f.Namespace.Name),
-					Image:   "busybox",
-					Command: []string{"/bin/sh", "-ec", cmd},
-					VolumeMounts: []v1.VolumeMount{
-						{
-							Name:      volumeName,
-							MountPath: "/tmp",
-						},
-					},
-					SecurityContext: &v1.SecurityContext{
-						Privileged: &privileged,
-					},
-				},
-			},
-			RestartPolicy: v1.RestartPolicyNever,
-			Volumes: []v1.Volume{
-				{
-					Name: volumeName,
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: "/tmp",
-						},
-					},
-				},
-			},
-			NodeName: node0.Name,
-		},
-	}
-	pod, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).Create(pod)
-	Expect(err).ToNot(HaveOccurred(), "while creating hostpath init pod")
-
-	err = framework.WaitForPodSuccessInNamespace(f.ClientSet, pod.Name, pod.Namespace)
-	Expect(err).ToNot(HaveOccurred(), "while waiting for hostpath init pod to succeed")
-
-	err = framework.DeletePodWithWait(f, f.ClientSet, pod)
-	Expect(err).ToNot(HaveOccurred(), "while deleting hostpath init pod")
-
-	return volInfo{
-		source: &v1.VolumeSource{
-			HostPath: &v1.HostPathVolumeSource{
-				Path: targetPath,
-			},
-		},
-		node: node0.Name,
-		privilegedSecurityContext: privileged,
-	}
-}
-
-func (s *hostpathSymlinkSource) getReadOnlyVolumeSpec() *v1.VolumeSource {
-	return nil
-}
-
-func (s *hostpathSymlinkSource) cleanupVolume(f *framework.Framework) {
-}
-
-type emptydirSource struct {
-}
-
-func initEmptydir() volSource {
-	return &emptydirSource{}
-}
-
-func (s *emptydirSource) createVolume(f *framework.Framework) volInfo {
-	return volInfo{
-		source: &v1.VolumeSource{
-			EmptyDir: &v1.EmptyDirVolumeSource{},
-		},
-		privilegedSecurityContext: true,
-	}
-}
-
-func (s *emptydirSource) getReadOnlyVolumeSpec() *v1.VolumeSource {
-	return nil
-}
-
-func (s *emptydirSource) cleanupVolume(f *framework.Framework) {
-}
-
 type gcepdPVCSource struct {
 	pvc *v1.PersistentVolumeClaim
 }
@@ -912,202 +1019,5 @@ func (s *gcepdPVCSource) cleanupVolume(f *framework.Framework) {
 	if s.pvc != nil {
 		err := f.ClientSet.CoreV1().PersistentVolumeClaims(f.Namespace.Name).Delete(s.pvc.Name, nil)
 		framework.ExpectNoError(err, "Error deleting PVC")
-	}
-}
-
-type gcepdPartitionSource struct {
-	diskName string
-}
-
-func initGCEPDPartition() volSource {
-	// Need to manually create, attach, partition, detach the GCE PD
-	// with disk name "subpath-partitioned-disk" before running this test
-	manual := true
-	if manual {
-		framework.Skipf("Skipping manual GCE PD partition test")
-	}
-	framework.SkipUnlessProviderIs("gce", "gke")
-	return &gcepdPartitionSource{diskName: "subpath-partitioned-disk"}
-}
-
-func (s *gcepdPartitionSource) createVolume(f *framework.Framework) volInfo {
-	// TODO: automate partitioned of GCE PD once it supports raw block volumes
-	// framework.Logf("Creating GCE PD volume")
-	// s.diskName, err = framework.CreatePDWithRetry()
-	// framework.ExpectNoError(err, "Error creating PD")
-
-	return volInfo{
-		source: &v1.VolumeSource{
-			GCEPersistentDisk: &v1.GCEPersistentDiskVolumeSource{
-				PDName:    s.diskName,
-				Partition: 1,
-			},
-		},
-		privilegedSecurityContext: true,
-	}
-}
-
-func (s *gcepdPartitionSource) getReadOnlyVolumeSpec() *v1.VolumeSource {
-	return nil
-}
-
-func (s *gcepdPartitionSource) cleanupVolume(f *framework.Framework) {
-	if s.diskName != "" {
-		// err := framework.DeletePDWithRetry(s.diskName)
-		// framework.ExpectNoError(err, "Error deleting PD")
-	}
-}
-
-type nfsSource struct {
-	serverPod *v1.Pod
-	serverIP  string
-}
-
-func initNFS() volSource {
-	return &nfsSource{}
-}
-
-func (s *nfsSource) createVolume(f *framework.Framework) volInfo {
-	framework.Logf("Creating NFS server")
-	_, s.serverPod, s.serverIP = framework.NewNFSServer(f.ClientSet, f.Namespace.Name, []string{"-G", "777", "/exports"})
-
-	return volInfo{
-		source: &v1.VolumeSource{
-			NFS: &v1.NFSVolumeSource{
-				Server: s.serverIP,
-				Path:   "/exports",
-			},
-		},
-		privilegedSecurityContext: true,
-	}
-}
-
-func (s *nfsSource) getReadOnlyVolumeSpec() *v1.VolumeSource {
-	return &v1.VolumeSource{
-		NFS: &v1.NFSVolumeSource{
-			Server:   s.serverIP,
-			Path:     "/exports",
-			ReadOnly: true,
-		},
-	}
-}
-
-func (s *nfsSource) cleanupVolume(f *framework.Framework) {
-	if s.serverPod != nil {
-		framework.DeletePodWithWait(f, f.ClientSet, s.serverPod)
-	}
-}
-
-type glusterSource struct {
-	serverPod *v1.Pod
-}
-
-func initGluster() volSource {
-	framework.SkipUnlessNodeOSDistroIs("gci", "ubuntu")
-	return &glusterSource{}
-}
-
-func (s *glusterSource) createVolume(f *framework.Framework) volInfo {
-	framework.Logf("Creating GlusterFS server")
-	_, s.serverPod, _ = framework.NewGlusterfsServer(f.ClientSet, f.Namespace.Name)
-
-	return volInfo{
-		source: &v1.VolumeSource{
-			Glusterfs: &v1.GlusterfsVolumeSource{
-				EndpointsName: "gluster-server",
-				Path:          "test_vol",
-			},
-		},
-		privilegedSecurityContext: true,
-	}
-}
-
-func (s *glusterSource) getReadOnlyVolumeSpec() *v1.VolumeSource {
-	return &v1.VolumeSource{
-		Glusterfs: &v1.GlusterfsVolumeSource{
-			EndpointsName: "gluster-server",
-			Path:          "test_vol",
-			ReadOnly:      true,
-		},
-	}
-}
-
-func (s *glusterSource) cleanupVolume(f *framework.Framework) {
-	if s.serverPod != nil {
-		framework.DeletePodWithWait(f, f.ClientSet, s.serverPod)
-		err := f.ClientSet.CoreV1().Endpoints(f.Namespace.Name).Delete("gluster-server", nil)
-		Expect(err).NotTo(HaveOccurred(), "Gluster delete endpoints failed")
-	}
-}
-
-// TODO: need a better way to wrap PVC.  A generic framework should support both static and dynamic PV.
-// For static PV, can reuse createVolume methods for inline volumes
-type nfsPVCSource struct {
-	serverPod *v1.Pod
-	pvc       *v1.PersistentVolumeClaim
-	pv        *v1.PersistentVolume
-}
-
-func initNFSPVC() volSource {
-	return &nfsPVCSource{}
-}
-
-func (s *nfsPVCSource) createVolume(f *framework.Framework) volInfo {
-	var serverIP string
-
-	framework.Logf("Creating NFS server")
-	_, s.serverPod, serverIP = framework.NewNFSServer(f.ClientSet, f.Namespace.Name, []string{"-G", "777", "/exports"})
-
-	pvConfig := framework.PersistentVolumeConfig{
-		NamePrefix:       "nfs-",
-		StorageClassName: f.Namespace.Name,
-		PVSource: v1.PersistentVolumeSource{
-			NFS: &v1.NFSVolumeSource{
-				Server: serverIP,
-				Path:   "/exports",
-			},
-		},
-	}
-	pvcConfig := framework.PersistentVolumeClaimConfig{
-		StorageClassName: &f.Namespace.Name,
-	}
-
-	framework.Logf("Creating PVC and PV")
-	pv, pvc, err := framework.CreatePVCPV(f.ClientSet, pvConfig, pvcConfig, f.Namespace.Name, false)
-	Expect(err).NotTo(HaveOccurred(), "PVC, PV creation failed")
-
-	err = framework.WaitOnPVandPVC(f.ClientSet, f.Namespace.Name, pv, pvc)
-	Expect(err).NotTo(HaveOccurred(), "PVC, PV failed to bind")
-
-	s.pvc = pvc
-	s.pv = pv
-
-	return volInfo{
-		source: &v1.VolumeSource{
-			PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-				ClaimName: pvc.Name,
-			},
-		},
-		privilegedSecurityContext: true,
-	}
-}
-
-func (s *nfsPVCSource) getReadOnlyVolumeSpec() *v1.VolumeSource {
-	return &v1.VolumeSource{
-		PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-			ClaimName: s.pvc.Name,
-			ReadOnly:  true,
-		},
-	}
-}
-
-func (s *nfsPVCSource) cleanupVolume(f *framework.Framework) {
-	if s.pvc != nil || s.pv != nil {
-		if errs := framework.PVPVCCleanup(f.ClientSet, f.Namespace.Name, s.pv, s.pvc); len(errs) != 0 {
-			framework.Failf("Failed to delete PVC or PV: %v", utilerrors.NewAggregate(errs))
-		}
-	}
-	if s.serverPod != nil {
-		framework.DeletePodWithWait(f, f.ClientSet, s.serverPod)
 	}
 }

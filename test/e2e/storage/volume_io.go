@@ -61,6 +61,128 @@ var md5hashes = map[int64]string{
 	fileSizeLarge:  "8d763edc71bd16217664793b5a15e403",
 }
 
+type volumeIOTestCase struct {
+	testPatterns map[string]testPattern
+}
+
+func initVolumeIOTestCase() testCase {
+	return &volumeIOTestCase{
+		testPatterns: map[string]testPattern{
+			"Volume": {
+				testVolType: inlineVolume,
+			},
+			"Static PV": {
+				testVolType: staticPV,
+			},
+			"Dynamic PV": {
+				testVolType: dynamicPV,
+			},
+		},
+	}
+}
+
+func (t *volumeIOTestCase) getTestPatterns() map[string]testPattern {
+	return t.testPatterns
+}
+
+func (t *volumeIOTestCase) initTestResource() testResource {
+	return &genericVolumeTestResource{}
+}
+
+func (t *volumeIOTestCase) createTestInput(
+	testPattern testPattern,
+	testResource testResource,
+) testInput {
+	if r, ok := testResource.(*genericVolumeTestResource); ok {
+		driver := r.driver
+		driverInfo := driver.getDriverInfo()
+		f := driverInfo.f
+		fileSizes := createFileSizes(driverInfo.maxFileSize)
+		volSource := r.volSource
+
+		if volSource == nil {
+			framework.Skipf("Driver %q does not define volumeSource - skipping", driverInfo.name)
+		}
+
+		if driverInfo.testFile == "" {
+			framework.Skipf("Test file for driver %q not found - skipping", driverInfo.name)
+		}
+
+		return volumeIOTestInput{
+			f:         f,
+			name:      driverInfo.name,
+			config:    driverInfo.config,
+			volSource: *volSource,
+			testFile:  driverInfo.testFile,
+			podSec:    driverInfo.podSec,
+			fileSizes: fileSizes,
+		}
+	}
+
+	framework.Failf("Fail to convert testResource to genericVolumeTestResource")
+	return nil
+}
+
+func (t *volumeIOTestCase) getTestFunc() func(*testInput) {
+	return testVolumeIOWithTestInput
+}
+
+func testVolumeIOWithTestInput(testInput *testInput) {
+	Context("-", func() {
+		var (
+			t  volumeIOTestInput
+			ok bool
+		)
+
+		BeforeEach(func() {
+			testInputVal := *testInput
+			if t, ok = testInputVal.(volumeIOTestInput); !ok {
+				framework.Failf("Fail to convert testInput to volumeIOTestInput")
+			}
+		})
+
+		execTestVolumeIO(&t)
+	})
+}
+
+type volumeIOTestInput struct {
+	f *framework.Framework
+
+	name      string
+	config    framework.VolumeTestConfig
+	volSource v1.VolumeSource
+	testFile  string
+	podSec    v1.PodSecurityContext
+	fileSizes []int64
+}
+
+func (i volumeIOTestInput) isTestInput() bool {
+	return true
+}
+
+func execTestVolumeIO(t *volumeIOTestInput) {
+	It("should write files of various sizes, verify size, validate content [Slow]", func() {
+		f := t.f
+		cs := f.ClientSet
+
+		err := testVolumeIO(f, cs, t.config, t.volSource, &t.podSec, t.testFile, t.fileSizes)
+		Expect(err).NotTo(HaveOccurred())
+	})
+}
+
+func createFileSizes(maxFileSize int64) []int64 {
+	allFileSizes := []int64{fileSizeSmall, fileSizeMedium, fileSizeLarge}
+	fileSizes := []int64{}
+
+	for _, size := range allFileSizes {
+		if size <= maxFileSize {
+			fileSizes = append(fileSizes, size)
+		}
+	}
+
+	return fileSizes
+}
+
 // Return the plugin's client pod spec. Use an InitContainer to setup the file i/o test env.
 func makePodSpec(config framework.VolumeTestConfig, dir, initCmd string, volsrc v1.VolumeSource, podSecContext *v1.PodSecurityContext) *v1.Pod {
 	volName := fmt.Sprintf("%s-%s", config.Prefix, "io-volume")
@@ -121,6 +243,8 @@ func makePodSpec(config framework.VolumeTestConfig, dir, initCmd string, volsrc 
 				},
 			},
 			RestartPolicy: v1.RestartPolicyNever, // want pod to fail if init container fails
+			NodeName:      config.ClientNodeName,
+			NodeSelector:  config.NodeSelector,
 		},
 	}
 }
@@ -241,194 +365,3 @@ func testVolumeIO(f *framework.Framework, cs clientset.Interface, config framewo
 
 	return
 }
-
-// These tests need privileged containers which are disabled by default.
-// TODO: support all of the plugins tested in storage/volumes.go
-var _ = utils.SIGDescribe("Volume plugin streaming [Slow]", func() {
-	f := framework.NewDefaultFramework("volume-io")
-	var (
-		config    framework.VolumeTestConfig
-		cs        clientset.Interface
-		ns        string
-		serverIP  string
-		serverPod *v1.Pod
-		volSource v1.VolumeSource
-	)
-
-	BeforeEach(func() {
-		cs = f.ClientSet
-		ns = f.Namespace.Name
-	})
-
-	////////////////////////////////////////////////////////////////////////
-	// NFS
-	////////////////////////////////////////////////////////////////////////
-	Describe("NFS", func() {
-		testFile := "nfs_io_test"
-		// client pod uses selinux
-		podSec := v1.PodSecurityContext{
-			SELinuxOptions: &v1.SELinuxOptions{
-				Level: "s0:c0,c1",
-			},
-		}
-
-		BeforeEach(func() {
-			config, serverPod, serverIP = framework.NewNFSServer(cs, ns, []string{})
-			volSource = v1.VolumeSource{
-				NFS: &v1.NFSVolumeSource{
-					Server:   serverIP,
-					Path:     "/",
-					ReadOnly: false,
-				},
-			}
-		})
-
-		AfterEach(func() {
-			framework.Logf("AfterEach: deleting NFS server pod %q...", serverPod.Name)
-			err := framework.DeletePodWithWait(f, cs, serverPod)
-			Expect(err).NotTo(HaveOccurred(), "AfterEach: NFS server pod failed to delete")
-		})
-
-		It("should write files of various sizes, verify size, validate content", func() {
-			fileSizes := []int64{fileSizeSmall, fileSizeMedium, fileSizeLarge}
-			err := testVolumeIO(f, cs, config, volSource, &podSec, testFile, fileSizes)
-			Expect(err).NotTo(HaveOccurred())
-		})
-	})
-
-	////////////////////////////////////////////////////////////////////////
-	// Gluster
-	////////////////////////////////////////////////////////////////////////
-	Describe("GlusterFS", func() {
-		var name string
-		testFile := "gluster_io_test"
-
-		BeforeEach(func() {
-			framework.SkipUnlessNodeOSDistroIs("gci")
-			// create gluster server and endpoints
-			config, serverPod, serverIP = framework.NewGlusterfsServer(cs, ns)
-			name = config.Prefix + "-server"
-			volSource = v1.VolumeSource{
-				Glusterfs: &v1.GlusterfsVolumeSource{
-					EndpointsName: name,
-					// 'test_vol' comes from test/images/volumes-tester/gluster/run_gluster.sh
-					Path:     "test_vol",
-					ReadOnly: false,
-				},
-			}
-		})
-
-		AfterEach(func() {
-			framework.Logf("AfterEach: deleting Gluster endpoints %q...", name)
-			epErr := cs.CoreV1().Endpoints(ns).Delete(name, nil)
-			framework.Logf("AfterEach: deleting Gluster server pod %q...", serverPod.Name)
-			err := framework.DeletePodWithWait(f, cs, serverPod)
-			if epErr != nil || err != nil {
-				if epErr != nil {
-					framework.Logf("AfterEach: Gluster delete endpoints failed: %v", err)
-				}
-				if err != nil {
-					framework.Logf("AfterEach: Gluster server pod delete failed: %v", err)
-				}
-				framework.Failf("AfterEach: cleanup failed")
-			}
-		})
-
-		It("should write files of various sizes, verify size, validate content", func() {
-			fileSizes := []int64{fileSizeSmall, fileSizeMedium}
-			err := testVolumeIO(f, cs, config, volSource, nil /*no secContext*/, testFile, fileSizes)
-			Expect(err).NotTo(HaveOccurred())
-		})
-	})
-
-	////////////////////////////////////////////////////////////////////////
-	// iSCSI
-	// The iscsiadm utility and iscsi target kernel modules must be installed on all nodes.
-	////////////////////////////////////////////////////////////////////////
-	Describe("iSCSI [Feature:Volumes]", func() {
-		testFile := "iscsi_io_test"
-
-		BeforeEach(func() {
-			config, serverPod, serverIP = framework.NewISCSIServer(cs, ns)
-			volSource = v1.VolumeSource{
-				ISCSI: &v1.ISCSIVolumeSource{
-					TargetPortal: serverIP + ":3260",
-					// from test/images/volumes-tester/iscsi/initiatorname.iscsi
-					IQN:      "iqn.2003-01.org.linux-iscsi.f21.x8664:sn.4b0aae584f7c",
-					Lun:      0,
-					FSType:   "ext2",
-					ReadOnly: false,
-				},
-			}
-		})
-
-		AfterEach(func() {
-			framework.Logf("AfterEach: deleting iSCSI server pod %q...", serverPod.Name)
-			err := framework.DeletePodWithWait(f, cs, serverPod)
-			Expect(err).NotTo(HaveOccurred(), "AfterEach: iSCSI server pod failed to delete")
-		})
-
-		It("should write files of various sizes, verify size, validate content", func() {
-			fileSizes := []int64{fileSizeSmall, fileSizeMedium}
-			fsGroup := int64(1234)
-			podSec := v1.PodSecurityContext{
-				FSGroup: &fsGroup,
-			}
-			err := testVolumeIO(f, cs, config, volSource, &podSec, testFile, fileSizes)
-			Expect(err).NotTo(HaveOccurred())
-		})
-	})
-
-	////////////////////////////////////////////////////////////////////////
-	// Ceph RBD
-	////////////////////////////////////////////////////////////////////////
-	Describe("Ceph-RBD [Feature:Volumes]", func() {
-		var (
-			secret *v1.Secret
-		)
-		testFile := "ceph-rbd_io_test"
-
-		BeforeEach(func() {
-			config, serverPod, secret, serverIP = framework.NewRBDServer(cs, ns)
-			volSource = v1.VolumeSource{
-				RBD: &v1.RBDVolumeSource{
-					CephMonitors: []string{serverIP},
-					RBDPool:      "rbd",
-					RBDImage:     "foo",
-					RadosUser:    "admin",
-					SecretRef: &v1.LocalObjectReference{
-						Name: secret.Name,
-					},
-					FSType:   "ext2",
-					ReadOnly: false,
-				},
-			}
-		})
-
-		AfterEach(func() {
-			framework.Logf("AfterEach: deleting Ceph-RDB server secret %q...", secret.Name)
-			secErr := cs.CoreV1().Secrets(ns).Delete(secret.Name, &metav1.DeleteOptions{})
-			framework.Logf("AfterEach: deleting Ceph-RDB server pod %q...", serverPod.Name)
-			err := framework.DeletePodWithWait(f, cs, serverPod)
-			if secErr != nil || err != nil {
-				if secErr != nil {
-					framework.Logf("AfterEach: Ceph-RDB delete secret failed: %v", secErr)
-				}
-				if err != nil {
-					framework.Logf("AfterEach: Ceph-RDB server pod delete failed: %v", err)
-				}
-				framework.Failf("AfterEach: cleanup failed")
-			}
-		})
-
-		It("should write files of various sizes, verify size, validate content", func() {
-			fileSizes := []int64{fileSizeSmall, fileSizeMedium}
-			fsGroup := int64(1234)
-			podSec := v1.PodSecurityContext{
-				FSGroup: &fsGroup,
-			}
-			err := testVolumeIO(f, cs, config, volSource, &podSec, testFile, fileSizes)
-			Expect(err).NotTo(HaveOccurred())
-		})
-	})
-})

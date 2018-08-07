@@ -65,6 +65,130 @@ const (
 	externalPluginName = "example.com/nfs"
 )
 
+type dynamicProvisioningTestCase struct {
+	testPatterns map[string]testPattern
+}
+
+func initDynamicProvisioningTestCase() testCase {
+	return &dynamicProvisioningTestCase{
+		testPatterns: map[string]testPattern{
+			"Dynamic PV": {
+				testVolType: dynamicPV,
+			},
+		},
+	}
+}
+
+func (t *dynamicProvisioningTestCase) getTestPatterns() map[string]testPattern {
+	return t.testPatterns
+}
+
+func (t *dynamicProvisioningTestCase) initTestResource() testResource {
+	return &dynamicProvisioningTestResource{}
+}
+
+func (t *dynamicProvisioningTestCase) createTestInput(
+	testPattern testPattern,
+	testResource testResource,
+) testInput {
+	if r, ok := testResource.(*dynamicProvisioningTestResource); ok {
+		driver := r.driver
+		driverInfo := driver.getDriverInfo()
+		f := driverInfo.f
+
+		framework.Logf("In createTestInput, pvc: %v", r.pvc)
+		return dynamicProvisioningTestInput{
+			testCase: storageClassTest{
+				claimSize:          r.claimSize,
+				expectedSize:       r.claimSize,
+				nodeName:           driverInfo.node.Name,
+				skipWriteReadCheck: driverInfo.skipWriteReadCheck,
+			},
+			cs:  f.ClientSet,
+			pvc: r.pvc,
+			sc:  r.sc,
+		}
+	}
+
+	framework.Failf("Fail to convert testResource to dynamicProvisioningTestResource")
+	return nil
+}
+
+func (t *dynamicProvisioningTestCase) getTestFunc() func(*testInput) {
+	return testDynamicProvisioningWithTestInput
+}
+
+func testDynamicProvisioningWithTestInput(testInput *testInput) {
+	Context("-", func() {
+		var (
+			t  dynamicProvisioningTestInput
+			ok bool
+		)
+
+		BeforeEach(func() {
+			testInputVal := *testInput
+			if t, ok = testInputVal.(dynamicProvisioningTestInput); !ok {
+				framework.Failf("Fail to convert testInput to dynamicProvisioningTestInput")
+			}
+		})
+
+		doTestDynamicProvisioning(&t)
+	})
+}
+
+func doTestDynamicProvisioning(t *dynamicProvisioningTestInput) {
+	It("should provision storage", func() {
+		testDynamicProvisioning(t.testCase, t.cs, t.pvc, t.sc)
+	})
+}
+
+type dynamicProvisioningTestResource struct {
+	driver testDriver
+
+	claimSize string
+	sc        *storage.StorageClass
+	pvc       *v1.PersistentVolumeClaim
+}
+
+func (s *dynamicProvisioningTestResource) setup(driver testDriver, testPattern testPattern) {
+	s.driver = driver
+
+	driverInfo := s.driver.getDriverInfo()
+	f := driverInfo.f
+	ns := f.Namespace
+
+	skipCreatingResourceForProvider(testPattern)
+
+	if testPattern.testVolType == dynamicPV {
+		if dynamicPVTestDriver, ok := driver.(dynamicPVTestDriver); ok {
+			s.sc = dynamicPVTestDriver.getDynamicProvisionStorageClass("")
+			if s.sc == nil {
+				framework.Skipf("Driver %q does not define Dynamic Provision StorageClass - skipping", driverInfo.name)
+			}
+			s.claimSize = "2Gi"
+			s.pvc = getClaim(s.claimSize, ns.Name)
+			s.pvc.Spec.StorageClassName = &s.sc.Name
+			framework.Logf("In setup, pvc: %v", s.pvc)
+		}
+	} else {
+		framework.Skipf("Dynamic Provision test can't run for %v - skipping", testPattern.testVolType)
+	}
+}
+
+func (s *dynamicProvisioningTestResource) cleanup() {
+}
+
+type dynamicProvisioningTestInput struct {
+	testCase storageClassTest
+	cs       clientset.Interface
+	pvc      *v1.PersistentVolumeClaim
+	sc       *storage.StorageClass
+}
+
+func (i dynamicProvisioningTestInput) isTestInput() bool {
+	return true
+}
+
 func testDynamicProvisioning(t storageClassTest, client clientset.Interface, claim *v1.PersistentVolumeClaim, class *storage.StorageClass) *v1.PersistentVolume {
 	var err error
 	if class != nil {
@@ -927,7 +1051,7 @@ func updateDefaultStorageClass(c clientset.Interface, scName string, defaultStr 
 	verifyDefaultStorageClass(c, scName, expectedDefault)
 }
 
-func newClaim(t storageClassTest, ns, suffix string) *v1.PersistentVolumeClaim {
+func getClaim(claimSize string, ns string) *v1.PersistentVolumeClaim {
 	claim := v1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "pvc-",
@@ -939,13 +1063,17 @@ func newClaim(t storageClassTest, ns, suffix string) *v1.PersistentVolumeClaim {
 			},
 			Resources: v1.ResourceRequirements{
 				Requests: v1.ResourceList{
-					v1.ResourceName(v1.ResourceStorage): resource.MustParse(t.claimSize),
+					v1.ResourceName(v1.ResourceStorage): resource.MustParse(claimSize),
 				},
 			},
 		},
 	}
 
 	return &claim
+}
+
+func newClaim(t storageClassTest, ns, suffix string) *v1.PersistentVolumeClaim {
+	return getClaim(t.claimSize, ns)
 }
 
 // runInPodWithVolume runs a command in a pod with given claim mounted to /mnt directory.
@@ -1015,14 +1143,7 @@ func getDefaultPluginName() string {
 	return ""
 }
 
-func newStorageClass(t storageClassTest, ns string, suffix string) *storage.StorageClass {
-	pluginName := t.provisioner
-	if pluginName == "" {
-		pluginName = getDefaultPluginName()
-	}
-	if suffix == "" {
-		suffix = "sc"
-	}
+func getStorageClass(provisioner string, parameters map[string]string, ns string, suffix string) *storage.StorageClass {
 	return &storage.StorageClass{
 		TypeMeta: metav1.TypeMeta{
 			Kind: "StorageClass",
@@ -1031,9 +1152,20 @@ func newStorageClass(t storageClassTest, ns string, suffix string) *storage.Stor
 			// Name must be unique, so let's base it on namespace name
 			Name: ns + "-" + suffix,
 		},
-		Provisioner: pluginName,
-		Parameters:  t.parameters,
+		Provisioner: provisioner,
+		Parameters:  parameters,
 	}
+}
+
+func newStorageClass(t storageClassTest, ns string, suffix string) *storage.StorageClass {
+	pluginName := t.provisioner
+	if pluginName == "" {
+		pluginName = getDefaultPluginName()
+	}
+	if suffix == "" {
+		suffix = "sc"
+	}
+	return getStorageClass(pluginName, t.parameters, ns, suffix)
 }
 
 // TODO: remove when storage.k8s.io/v1beta1 is removed.
