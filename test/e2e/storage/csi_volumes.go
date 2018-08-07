@@ -50,7 +50,8 @@ var csiTestDrivers = map[string]func(f *framework.Framework, config framework.Vo
 	// Feature tag to skip test in CI, pending fix of #62237
 	"[Feature: GCE PD CSI Plugin] gcePD": initCSIgcePD,
 	"[Feature:Volumes] rbd":              initCSIrbd,
-	"[Feature:Volumes] cephfs":           initCSIcephfs,
+	// Skip cephfs test until ceph/ceph-csi#48 is fixed
+	//"[Feature:Volumes] cephfs":           initCSIcephfs,
 }
 
 var _ = utils.SIGDescribe("CSI Volumes", func() {
