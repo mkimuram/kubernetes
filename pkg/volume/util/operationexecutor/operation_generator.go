@@ -887,6 +887,14 @@ func (og *operationGenerator) GenerateMapVolumeFunc(
 			return volumeToMount.GenerateError("MapVolume failed", fmt.Errorf("Device path of the volume is empty"))
 		}
 
+		// Map device to global and pod device map path
+		volumeMapPath, volName := blockVolumeMapper.GetPodDeviceMapPath()
+		mapErr = blockVolumeMapper.MapDevice(devicePath, globalMapPath, volumeMapPath, volName, volumeToMount.Pod.UID)
+		if mapErr != nil {
+			// On failure, return error. Caller will log and retry.
+			return volumeToMount.GenerateError("MapVolume.MapDevice failed", mapErr)
+		}
+
 		// When kubelet is containerized, devicePath may be a symlink at a place unavailable to
 		// kubelet, so evaluate it on the host and expect that it links to a device in /dev,
 		// which will be available to containerized kubelet. If still it does not exist,
@@ -895,14 +903,6 @@ func (og *operationGenerator) GenerateMapVolumeFunc(
 		devicePath, err = mounter.EvalHostSymlinks(devicePath)
 		if err != nil {
 			return volumeToMount.GenerateError("MapVolume.EvalHostSymlinks failed", err)
-		}
-
-		// Map device to global and pod device map path
-		volumeMapPath, volName := blockVolumeMapper.GetPodDeviceMapPath()
-		mapErr = blockVolumeMapper.MapDevice(devicePath, globalMapPath, volumeMapPath, volName, volumeToMount.Pod.UID)
-		if mapErr != nil {
-			// On failure, return error. Caller will log and retry.
-			return volumeToMount.GenerateError("MapVolume.MapDevice failed", mapErr)
 		}
 
 		// Take filedescriptor lock to keep a block device opened. Otherwise, there is a case

@@ -95,6 +95,13 @@ func (m *csiBlockMapper) SetUpDevice() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)
 	defer cancel()
 
+	// setup path globalMapPath before call to NodeStageVolume
+	if err := os.MkdirAll(globalMapPath, 0750); err != nil {
+		glog.Error(log("blockMapper.SetupDevice failed to create dir %s: %v", globalMapPath, err))
+		return "", err
+	}
+	glog.V(4).Info(log("blockMapper.SetupDevice created global device map path successfully [%s]", globalMapPath))
+
 	// Check whether "STAGE_UNSTAGE_VOLUME" is set
 	stageUnstageSet, err := hasStageUnstageCapability(ctx, csi)
 	if err != nil {
@@ -103,7 +110,7 @@ func (m *csiBlockMapper) SetUpDevice() (string, error) {
 	}
 	if !stageUnstageSet {
 		glog.Infof(log("blockMapper.SetupDevice STAGE_UNSTAGE_VOLUME capability not set. Skipping MountDevice..."))
-		return "", nil
+		return globalMapPathBlockFile, nil
 	}
 
 	// Start MountDevice
@@ -132,31 +139,14 @@ func (m *csiBlockMapper) SetUpDevice() (string, error) {
 		}
 	}
 
-	// setup path globalMapPath and block file before call to NodeStageVolume
-	if err := os.MkdirAll(globalMapPath, 0750); err != nil {
-		glog.Error(log("blockMapper.SetupDevice failed to create dir %s: %v", globalMapPath, err))
-		return "", err
-	}
-	glog.V(4).Info(log("blockMapper.SetupDevice created global device map path successfully [%s]", globalMapPath))
-
-	// create block device file
-	blockFile, err := os.OpenFile(globalMapPathBlockFile, os.O_CREATE|os.O_RDWR, 0750)
-	if err != nil {
-		glog.Error(log("blockMapper.SetupDevice failed to create dir %s: %v", globalMapPathBlockFile, err))
-		return "", err
-	}
-	if err := blockFile.Close(); err != nil {
-		glog.Error(log("blockMapper.SetupDevice failed to close file %s: %v", globalMapPathBlockFile, err))
-		return "", err
-	}
-	glog.V(4).Info(log("blockMapper.SetupDevice created global map path block device file successfully [%s]", globalMapPathBlockFile))
-
 	//TODO (vladimirvivien) implement better AccessModes mapping between k8s and CSI
 	accessMode := v1.ReadWriteOnce
 	if m.spec.PersistentVolume.Spec.AccessModes != nil {
 		accessMode = m.spec.PersistentVolume.Spec.AccessModes[0]
 	}
 
+	// SetUpDevice expects NodeStageVolume to make block device attach to the node and
+	// create symlink from the device to globalMapPathBlockFile
 	err = csi.NodeStageVolume(ctx,
 		csiSource.VolumeHandle,
 		publishVolumeInfo,
@@ -201,19 +191,9 @@ func (m *csiBlockMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, vol
 	defer cancel()
 
 	globalMapPathBlockFile := devicePath
-	dir, _ := m.GetPodDeviceMapPath()
-	targetBlockFilePath := filepath.Join(dir, "file")
-	glog.V(4).Infof(log("blockMapper.MapDevice target volume map file path %s", targetBlockFilePath))
-
-	stageCapable, err := hasStageUnstageCapability(ctx, csi)
-	if err != nil {
-		glog.Error(log("blockMapper.MapDevice failed to check for STAGE_UNSTAGE_VOLUME capabilty: %v", err))
-		return err
-	}
-
-	if !stageCapable {
-		globalMapPathBlockFile = ""
-	}
+	podDeviceMapPath, file := m.GetPodDeviceMapPath()
+	podDeviceMapPathBlockFile := filepath.Join(podDeviceMapPath, file)
+	glog.V(4).Infof(log("blockMapper.MapDevice podDeviceMapPathBlockFile %s", podDeviceMapPathBlockFile))
 
 	nodeName := string(m.plugin.host.GetNodeName())
 	attachID := getAttachmentName(csiSource.VolumeHandle, csiSource.Driver, nodeName)
@@ -241,23 +221,12 @@ func (m *csiBlockMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, vol
 		}
 	}
 
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		glog.Error(log("blockMapper.MapDevice failed to create dir %s:  %v", dir, err))
+	// setup path podDeviceMapPath before call to NodePublishVolume
+	if err := os.MkdirAll(podDeviceMapPath, 0750); err != nil {
+		glog.Error(log("blockMapper.MapDevice failed to create podDeviceMapPath %s:  %v", podDeviceMapPath, err))
 		return err
 	}
-	glog.V(4).Info(log("blockMapper.MapDevice created target volume map path successfully [%s]", dir))
-
-	// create target map volume block file
-	targetBlockFile, err := os.OpenFile(targetBlockFilePath, os.O_CREATE|os.O_RDWR, 0750)
-	if err != nil {
-		glog.Error(log("blockMapper.MapDevice failed to create file %s: %v", targetBlockFilePath, err))
-		return err
-	}
-	if err := targetBlockFile.Close(); err != nil {
-		glog.Error(log("blockMapper.MapDevice failed to close file %s: %v", targetBlockFilePath, err))
-		return err
-	}
-	glog.V(4).Info(log("blockMapper.MapDevice created target volume map file successfully [%s]", targetBlockFilePath))
+	glog.V(4).Info(log("blockMapper.MapDevice created podDeviceMapPath successfully [%s]", podDeviceMapPath))
 
 	//TODO (vladimirvivien) implement better AccessModes mapping between k8s and CSI
 	accessMode := v1.ReadWriteOnce
@@ -265,12 +234,16 @@ func (m *csiBlockMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, vol
 		accessMode = m.spec.PersistentVolume.Spec.AccessModes[0]
 	}
 
+	// MapDevice expects NodePublishVolume to create symlink from the block device to podDeviceMapPathBlockFile.
+	// For csi drivers that don't implement NodeStageVolume, it also expects NodePublishVolume to do the same
+	// to NodeStageVolume, or making block device attach to the node and creating symlink from the device to
+	// globalMapPathBlockFile
 	err = csi.NodePublishVolume(
 		ctx,
 		m.volumeID,
 		m.readOnly,
 		globalMapPathBlockFile,
-		targetBlockFilePath,
+		podDeviceMapPathBlockFile,
 		accessMode,
 		publishVolumeInfo,
 		csiSource.VolumeAttributes,
@@ -280,8 +253,8 @@ func (m *csiBlockMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, vol
 
 	if err != nil {
 		glog.Errorf(log("blockMapper.MapDevice failed: %v", err))
-		if err := os.RemoveAll(dir); err != nil {
-			glog.Error(log("blockMapper.MapDevice failed to remove mapped dir after a NodePublish() error [%s]: %v", dir, err))
+		if err := os.RemoveAll(podDeviceMapPath); err != nil {
+			glog.Error(log("blockMapper.MapDevice failed to remove podDeviceMapPath after a NodePublish() error [%s]: %v", podDeviceMapPath, err))
 		}
 		return err
 	}
