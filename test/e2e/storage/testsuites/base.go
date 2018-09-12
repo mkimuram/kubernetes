@@ -119,12 +119,13 @@ func skipUnsupportedTest(suite TestSuite, driver drivers.TestDriver, pattern tes
 // See volume_io.go or volumes.go in test/e2e/storage/testsuites/ for how to use this resource.
 // Also, see subpath.go in the same directory for how to extend and use it.
 type genericVolumeTestResource struct {
-	driver    drivers.TestDriver
-	volType   string
-	volSource *v1.VolumeSource
-	pvc       *v1.PersistentVolumeClaim
-	pv        *v1.PersistentVolume
-	sc        *storagev1.StorageClass
+	driver     drivers.TestDriver
+	volumeInfo interface{}
+	volType    string
+	volSource  *v1.VolumeSource
+	pvc        *v1.PersistentVolumeClaim
+	pv         *v1.PersistentVolume
+	sc         *storagev1.StorageClass
 }
 
 var _ TestResource = &genericVolumeTestResource{}
@@ -139,19 +140,19 @@ func (r *genericVolumeTestResource) setupResource(driver drivers.TestDriver, pat
 	volType := pattern.VolType
 
 	// Create volume for pre-provisioned volume tests
-	drivers.CreateVolume(driver, volType)
+	r.volumeInfo = drivers.CreateVolume(driver, volType)
 
 	switch volType {
 	case testpatterns.InlineVolume:
 		framework.Logf("Creating resource for inline volume")
 		if iDriver, ok := driver.(drivers.InlineVolumeTestDriver); ok {
-			r.volSource = iDriver.GetVolumeSource(false, fsType)
+			r.volSource = iDriver.GetVolumeSource(false, fsType, r.volumeInfo)
 			r.volType = dInfo.Name
 		}
 	case testpatterns.PreprovisionedPV:
 		framework.Logf("Creating resource for pre-provisioned PV")
 		if pDriver, ok := driver.(drivers.PreprovisionedPVTestDriver); ok {
-			pvSource := pDriver.GetPersistentVolumeSource(false, fsType)
+			pvSource := pDriver.GetPersistentVolumeSource(false, fsType, r.volumeInfo)
 			if pvSource != nil {
 				r.volSource, r.pv, r.pvc = createVolumeSourceWithPVCPV(f, dInfo.Name, pvSource, false)
 			}
@@ -202,7 +203,7 @@ func (r *genericVolumeTestResource) cleanupResource(driver drivers.TestDriver, p
 	}
 
 	// Cleanup volume for pre-provisioned volume tests
-	drivers.DeleteVolume(driver, volType)
+	drivers.DeleteVolume(driver, volType, r.volumeInfo)
 }
 
 func createVolumeSourceWithPVCPV(

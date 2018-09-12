@@ -99,7 +99,7 @@ func (n *nfsDriver) GetDriverInfo() *DriverInfo {
 func (n *nfsDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 }
 
-func (n *nfsDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (n *nfsDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
 	return &v1.VolumeSource{
 		NFS: &v1.NFSVolumeSource{
 			Server:   n.serverIP,
@@ -109,7 +109,7 @@ func (n *nfsDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSour
 	}
 }
 
-func (n *nfsDriver) GetPersistentVolumeSource(readOnly bool, fsType string) *v1.PersistentVolumeSource {
+func (n *nfsDriver) GetPersistentVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.PersistentVolumeSource {
 	return &v1.PersistentVolumeSource{
 		NFS: &v1.NFSVolumeSource{
 			Server:   n.serverIP,
@@ -158,7 +158,7 @@ func (n *nfsDriver) CleanupDriver() {
 	cs.RbacV1beta1().ClusterRoleBindings().Delete(clusterRoleBindingName, metav1.NewDeleteOptions(0))
 }
 
-func (n *nfsDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (n *nfsDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	f := n.driverInfo.Framework
 	cs := f.ClientSet
 	ns := f.Namespace
@@ -176,9 +176,10 @@ func (n *nfsDriver) CreateVolume(volType testpatterns.TestVolType) {
 	default:
 		framework.Failf("Unsupported volType:%v is specified", volType)
 	}
+	return nil
 }
 
-func (n *nfsDriver) DeleteVolume(volType testpatterns.TestVolType) {
+func (n *nfsDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
 	f := n.driverInfo.Framework
 
 	switch volType {
@@ -233,7 +234,7 @@ func (g *glusterFSDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) 
 	}
 }
 
-func (g *glusterFSDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (g *glusterFSDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
 	name := g.driverInfo.Config.Prefix + "-server"
 	return &v1.VolumeSource{
 		Glusterfs: &v1.GlusterfsVolumeSource{
@@ -245,7 +246,7 @@ func (g *glusterFSDriver) GetVolumeSource(readOnly bool, fsType string) *v1.Volu
 	}
 }
 
-func (g *glusterFSDriver) GetPersistentVolumeSource(readOnly bool, fsType string) *v1.PersistentVolumeSource {
+func (g *glusterFSDriver) GetPersistentVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.PersistentVolumeSource {
 	name := g.driverInfo.Config.Prefix + "-server"
 	return &v1.PersistentVolumeSource{
 		Glusterfs: &v1.GlusterfsVolumeSource{
@@ -263,15 +264,16 @@ func (g *glusterFSDriver) CreateDriver() {
 func (g *glusterFSDriver) CleanupDriver() {
 }
 
-func (g *glusterFSDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (g *glusterFSDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	f := g.driverInfo.Framework
 	cs := f.ClientSet
 	ns := f.Namespace
 
 	g.driverInfo.Config, g.serverPod, g.serverIP = framework.NewGlusterfsServer(cs, ns.Name)
+	return nil
 }
 
-func (g *glusterFSDriver) DeleteVolume(volType testpatterns.TestVolType) {
+func (g *glusterFSDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
 	f := g.driverInfo.Framework
 	cs := f.ClientSet
 	ns := f.Namespace
@@ -335,7 +337,7 @@ func (i *iSCSIDriver) GetDriverInfo() *DriverInfo {
 func (i *iSCSIDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 }
 
-func (i *iSCSIDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (i *iSCSIDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
 	volSource := v1.VolumeSource{
 		ISCSI: &v1.ISCSIVolumeSource{
 			TargetPortal: i.serverIP + ":3260",
@@ -351,7 +353,7 @@ func (i *iSCSIDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSo
 	return &volSource
 }
 
-func (i *iSCSIDriver) GetPersistentVolumeSource(readOnly bool, fsType string) *v1.PersistentVolumeSource {
+func (i *iSCSIDriver) GetPersistentVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.PersistentVolumeSource {
 	pvSource := v1.PersistentVolumeSource{
 		ISCSI: &v1.ISCSIPersistentVolumeSource{
 			TargetPortal: i.serverIP + ":3260",
@@ -372,15 +374,16 @@ func (i *iSCSIDriver) CreateDriver() {
 func (i *iSCSIDriver) CleanupDriver() {
 }
 
-func (i *iSCSIDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (i *iSCSIDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	f := i.driverInfo.Framework
 	cs := f.ClientSet
 	ns := f.Namespace
 
 	i.driverInfo.Config, i.serverPod, i.serverIP = framework.NewISCSIServer(cs, ns.Name)
+	return nil
 }
 
-func (i *iSCSIDriver) DeleteVolume(volType testpatterns.TestVolType) {
+func (i *iSCSIDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
 	f := i.driverInfo.Framework
 
 	framework.CleanUpVolumeServer(f, i.serverPod)
@@ -427,7 +430,7 @@ func (r *rbdDriver) GetDriverInfo() *DriverInfo {
 func (r *rbdDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 }
 
-func (r *rbdDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (r *rbdDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
 	volSource := v1.VolumeSource{
 		RBD: &v1.RBDVolumeSource{
 			CephMonitors: []string{r.serverIP},
@@ -446,7 +449,7 @@ func (r *rbdDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSour
 	return &volSource
 }
 
-func (r *rbdDriver) GetPersistentVolumeSource(readOnly bool, fsType string) *v1.PersistentVolumeSource {
+func (r *rbdDriver) GetPersistentVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.PersistentVolumeSource {
 	f := r.driverInfo.Framework
 	ns := f.Namespace
 	pvSource := v1.PersistentVolumeSource{
@@ -474,15 +477,16 @@ func (r *rbdDriver) CreateDriver() {
 func (r *rbdDriver) CleanupDriver() {
 }
 
-func (r *rbdDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (r *rbdDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	f := r.driverInfo.Framework
 	cs := f.ClientSet
 	ns := f.Namespace
 
 	r.driverInfo.Config, r.serverPod, r.secret, r.serverIP = framework.NewRBDServer(cs, ns.Name)
+	return nil
 }
 
-func (r *rbdDriver) DeleteVolume(volType testpatterns.TestVolType) {
+func (r *rbdDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
 	f := r.driverInfo.Framework
 
 	framework.CleanUpVolumeServerWithSecret(f, r.serverPod, r.secret)
@@ -526,7 +530,7 @@ func (c *cephFSDriver) GetDriverInfo() *DriverInfo {
 func (c *cephFSDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 }
 
-func (c *cephFSDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (c *cephFSDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
 	return &v1.VolumeSource{
 		CephFS: &v1.CephFSVolumeSource{
 			Monitors: []string{c.serverIP + ":6789"},
@@ -539,7 +543,7 @@ func (c *cephFSDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeS
 	}
 }
 
-func (c *cephFSDriver) GetPersistentVolumeSource(readOnly bool, fsType string) *v1.PersistentVolumeSource {
+func (c *cephFSDriver) GetPersistentVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.PersistentVolumeSource {
 	f := c.driverInfo.Framework
 	ns := f.Namespace
 
@@ -562,15 +566,16 @@ func (c *cephFSDriver) CreateDriver() {
 func (c *cephFSDriver) CleanupDriver() {
 }
 
-func (c *cephFSDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (c *cephFSDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	f := c.driverInfo.Framework
 	cs := f.ClientSet
 	ns := f.Namespace
 
 	c.driverInfo.Config, c.serverPod, c.secret, c.serverIP = framework.NewRBDServer(cs, ns.Name)
+	return nil
 }
 
-func (c *cephFSDriver) DeleteVolume(volType testpatterns.TestVolType) {
+func (c *cephFSDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
 	f := c.driverInfo.Framework
 
 	framework.CleanUpVolumeServerWithSecret(f, c.serverPod, c.secret)
@@ -587,7 +592,7 @@ var _ TestDriver = &hostPathDriver{}
 var _ PreprovisionedVolumeTestDriver = &hostPathDriver{}
 var _ InlineVolumeTestDriver = &hostPathDriver{}
 
-// InitHostpathDriver returns hostPathDriver that implements TestDriver interface
+// InitHostPathDriver returns hostPathDriver that implements TestDriver interface
 func InitHostPathDriver() TestDriver {
 	return &hostPathDriver{
 		driverInfo: DriverInfo{
@@ -610,7 +615,7 @@ func (h *hostPathDriver) GetDriverInfo() *DriverInfo {
 func (h *hostPathDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 }
 
-func (h *hostPathDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (h *hostPathDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
 	// hostPath doesn't support readOnly volume
 	if readOnly {
 		return nil
@@ -628,7 +633,7 @@ func (h *hostPathDriver) CreateDriver() {
 func (h *hostPathDriver) CleanupDriver() {
 }
 
-func (h *hostPathDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (h *hostPathDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	f := h.driverInfo.Framework
 	cs := f.ClientSet
 
@@ -636,19 +641,28 @@ func (h *hostPathDriver) CreateVolume(volType testpatterns.TestVolType) {
 	nodes := framework.GetReadySchedulableNodesOrDie(cs)
 	node := nodes.Items[rand.Intn(len(nodes.Items))]
 	h.driverInfo.Config.ClientNodeName = node.Name
+	return nil
 }
 
-func (h *hostPathDriver) DeleteVolume(volType testpatterns.TestVolType) {
+func (h *hostPathDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
 }
 
 // HostPathSymlink
 type hostPathSymlinkDriver struct {
+	driverInfo DriverInfo
+}
+
+type hostPathSymlinkVolumeInfo struct {
 	node       v1.Node
+	prepPod    *v1.Pod
 	sourcePath string
 	targetPath string
-	prepPod    *v1.Pod
+}
 
-	driverInfo DriverInfo
+func getHostPathSymlinkVolumeInfo(volumeInfo interface{}) hostPathSymlinkVolumeInfo {
+	hVolInfo, ok := volumeInfo.(hostPathSymlinkVolumeInfo)
+	Expect(ok).To(BeTrue(), "Failed to cast VolumeInfo to hostPathSymlinkVolumeInfo")
+	return hVolInfo
 }
 
 var _ TestDriver = &hostPathSymlinkDriver{}
@@ -678,14 +692,15 @@ func (h *hostPathSymlinkDriver) GetDriverInfo() *DriverInfo {
 func (h *hostPathSymlinkDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 }
 
-func (h *hostPathSymlinkDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (h *hostPathSymlinkDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
 	// hostPathSymlink doesn't support readOnly volume
 	if readOnly {
 		return nil
 	}
+	hVolInfo := getHostPathSymlinkVolumeInfo(volumeInfo)
 	return &v1.VolumeSource{
 		HostPath: &v1.HostPathVolumeSource{
-			Path: h.targetPath,
+			Path: hVolInfo.targetPath,
 		},
 	}
 }
@@ -696,12 +711,12 @@ func (h *hostPathSymlinkDriver) CreateDriver() {
 func (h *hostPathSymlinkDriver) CleanupDriver() {
 }
 
-func (h *hostPathSymlinkDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (h *hostPathSymlinkDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	f := h.driverInfo.Framework
 	cs := f.ClientSet
 
-	h.sourcePath = fmt.Sprintf("/tmp/%v", f.Namespace.Name)
-	h.targetPath = fmt.Sprintf("/tmp/%v-link", f.Namespace.Name)
+	sourcePath := fmt.Sprintf("/tmp/%v", f.Namespace.Name)
+	targetPath := fmt.Sprintf("/tmp/%v-link", f.Namespace.Name)
 	volumeName := "test-volume"
 
 	// pods should be scheduled on the node
@@ -709,11 +724,11 @@ func (h *hostPathSymlinkDriver) CreateVolume(volType testpatterns.TestVolType) {
 	node := nodes.Items[rand.Intn(len(nodes.Items))]
 	h.driverInfo.Config.ClientNodeName = node.Name
 
-	cmd := fmt.Sprintf("mkdir %v -m 777 && ln -s %v %v", h.sourcePath, h.sourcePath, h.targetPath)
+	cmd := fmt.Sprintf("mkdir %v -m 777 && ln -s %v %v", sourcePath, sourcePath, targetPath)
 	privileged := true
 
 	// Launch pod to initialize hostPath directory and symlink
-	h.prepPod = &v1.Pod{
+	prepPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("hostpath-symlink-prep-%s", f.Namespace.Name),
 		},
@@ -748,8 +763,8 @@ func (h *hostPathSymlinkDriver) CreateVolume(volType testpatterns.TestVolType) {
 			NodeName: node.Name,
 		},
 	}
-	// h.prepPod will be reused in cleanupDriver.
-	pod, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).Create(h.prepPod)
+	// prepPod will be reused in cleanupDriver.
+	pod, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).Create(prepPod)
 	Expect(err).ToNot(HaveOccurred(), "while creating hostPath init pod")
 
 	err = framework.WaitForPodSuccessInNamespace(f.ClientSet, pod.Name, pod.Namespace)
@@ -757,15 +772,23 @@ func (h *hostPathSymlinkDriver) CreateVolume(volType testpatterns.TestVolType) {
 
 	err = framework.DeletePodWithWait(f, f.ClientSet, pod)
 	Expect(err).ToNot(HaveOccurred(), "while deleting hostPath init pod")
+
+	return hostPathSymlinkVolumeInfo{
+		node:       node,
+		prepPod:    prepPod,
+		sourcePath: sourcePath,
+		targetPath: targetPath,
+	}
 }
 
-func (h *hostPathSymlinkDriver) DeleteVolume(volType testpatterns.TestVolType) {
+func (h *hostPathSymlinkDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
 	f := h.driverInfo.Framework
 
-	cmd := fmt.Sprintf("rm -rf %v&& rm -rf %v", h.targetPath, h.sourcePath)
-	h.prepPod.Spec.Containers[0].Command = []string{"/bin/sh", "-ec", cmd}
+	hVolInfo := getHostPathSymlinkVolumeInfo(volumeInfo)
+	cmd := fmt.Sprintf("rm -rf %v&& rm -rf %v", hVolInfo.targetPath, hVolInfo.sourcePath)
+	hVolInfo.prepPod.Spec.Containers[0].Command = []string{"/bin/sh", "-ec", cmd}
 
-	pod, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).Create(h.prepPod)
+	pod, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).Create(hVolInfo.prepPod)
 	Expect(err).ToNot(HaveOccurred(), "while creating hostPath teardown pod")
 
 	err = framework.WaitForPodSuccessInNamespace(f.ClientSet, pod.Name, pod.Namespace)
@@ -807,7 +830,7 @@ func (e *emptydirDriver) GetDriverInfo() *DriverInfo {
 func (e *emptydirDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 }
 
-func (e *emptydirDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (e *emptydirDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
 	// emptydir doesn't support readOnly volume
 	if readOnly {
 		return nil
@@ -817,10 +840,11 @@ func (e *emptydirDriver) GetVolumeSource(readOnly bool, fsType string) *v1.Volum
 	}
 }
 
-func (e *emptydirDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (e *emptydirDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
+	return nil
 }
 
-func (e *emptydirDriver) DeleteVolume(volType testpatterns.TestVolType) {
+func (e *emptydirDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
 }
 
 func (e *emptydirDriver) CreateDriver() {
@@ -835,10 +859,18 @@ func (e *emptydirDriver) CleanupDriver() {
 // and that the usual OpenStack authentication env. variables are set
 // (OS_USERNAME, OS_PASSWORD, OS_TENANT_NAME at least).
 type cinderDriver struct {
+	driverInfo DriverInfo
+}
+
+type cinderVolumeInfo struct {
 	volumeName string
 	volumeID   string
+}
 
-	driverInfo DriverInfo
+func getCinderVolumeInfo(volumeInfo interface{}) cinderVolumeInfo {
+	cVolInfo, ok := volumeInfo.(cinderVolumeInfo)
+	Expect(ok).To(BeTrue(), "Failed to cast VolumeInfo to cinderVolumeInfo")
+	return cVolInfo
 }
 
 var _ TestDriver = &cinderDriver{}
@@ -872,10 +904,11 @@ func (c *cinderDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 	framework.SkipUnlessProviderIs("openstack")
 }
 
-func (c *cinderDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (c *cinderDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
+	cVolInfo := getCinderVolumeInfo(volumeInfo)
 	volSource := v1.VolumeSource{
 		Cinder: &v1.CinderVolumeSource{
-			VolumeID: c.volumeID,
+			VolumeID: cVolInfo.volumeID,
 			ReadOnly: readOnly,
 		},
 	}
@@ -885,10 +918,11 @@ func (c *cinderDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeS
 	return &volSource
 }
 
-func (c *cinderDriver) GetPersistentVolumeSource(readOnly bool, fsType string) *v1.PersistentVolumeSource {
+func (c *cinderDriver) GetPersistentVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.PersistentVolumeSource {
+	cVolInfo := getCinderVolumeInfo(volumeInfo)
 	pvSource := v1.PersistentVolumeSource{
 		Cinder: &v1.CinderPersistentVolumeSource{
-			VolumeID: c.volumeID,
+			VolumeID: cVolInfo.volumeID,
 			ReadOnly: readOnly,
 		},
 	}
@@ -916,14 +950,14 @@ func (c *cinderDriver) CreateDriver() {
 func (c *cinderDriver) CleanupDriver() {
 }
 
-func (c *cinderDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (c *cinderDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	f := c.driverInfo.Framework
 	ns := f.Namespace
 
 	// We assume that namespace.Name is a random string
-	c.volumeName = ns.Name
+	volumeName := ns.Name
 	By("creating a test Cinder volume")
-	output, err := exec.Command("cinder", "create", "--display-name="+c.volumeName, "1").CombinedOutput()
+	output, err := exec.Command("cinder", "create", "--display-name="+volumeName, "1").CombinedOutput()
 	outputString := string(output[:])
 	framework.Logf("cinder output:\n%s", outputString)
 	Expect(err).NotTo(HaveOccurred())
@@ -933,7 +967,7 @@ func (c *cinderDriver) CreateVolume(volType testpatterns.TestVolType) {
 	// |  availability_zone  |                 nova                 |
 	// ...
 	// |          id         | 1d6ff08f-5d1c-41a4-ad72-4ef872cae685 |
-	c.volumeID = ""
+	volumeID := ""
 	for _, line := range strings.Split(outputString, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 5 {
@@ -942,15 +976,21 @@ func (c *cinderDriver) CreateVolume(volType testpatterns.TestVolType) {
 		if fields[1] != "id" {
 			continue
 		}
-		c.volumeID = fields[3]
+		volumeID = fields[3]
 		break
 	}
-	framework.Logf("Volume ID: %s", c.volumeID)
-	Expect(c.volumeID).NotTo(Equal(""))
+	framework.Logf("Volume ID: %s", volumeID)
+	Expect(volumeID).NotTo(Equal(""))
+
+	return cinderVolumeInfo{
+		volumeName: volumeName,
+		volumeID:   volumeID,
+	}
 }
 
-func (c *cinderDriver) DeleteVolume(volType testpatterns.TestVolType) {
-	deleteCinderVolume(c.volumeName)
+func (c *cinderDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
+	cVolInfo := getCinderVolumeInfo(volumeInfo)
+	deleteCinderVolume(cVolInfo.volumeName)
 }
 
 func deleteCinderVolume(name string) error {
@@ -975,9 +1015,17 @@ func deleteCinderVolume(name string) error {
 
 // GCE
 type gcePdDriver struct {
-	volumeName string
-
 	driverInfo DriverInfo
+}
+
+type gcePDVolumeInfo struct {
+	volumeName string
+}
+
+func getGcePDVolumeInfo(volumeInfo interface{}) gcePDVolumeInfo {
+	gVolInfo, ok := volumeInfo.(gcePDVolumeInfo)
+	Expect(ok).To(BeTrue(), "Failed to cast VolumeInfo to gcePDVolumeInfo")
+	return gVolInfo
 }
 
 var _ TestDriver = &gcePdDriver{}
@@ -986,7 +1034,7 @@ var _ InlineVolumeTestDriver = &gcePdDriver{}
 var _ PreprovisionedPVTestDriver = &gcePdDriver{}
 var _ DynamicPVTestDriver = &gcePdDriver{}
 
-// InitGceDriver returns gcePdDriver that implements TestDriver interface
+// InitGcePdDriver returns gcePdDriver that implements TestDriver interface
 func InitGcePdDriver() TestDriver {
 	return &gcePdDriver{
 		driverInfo: DriverInfo{
@@ -1017,10 +1065,11 @@ func (g *gcePdDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 	}
 }
 
-func (g *gcePdDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (g *gcePdDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
+	gVolInfo := getGcePDVolumeInfo(volumeInfo)
 	volSource := v1.VolumeSource{
 		GCEPersistentDisk: &v1.GCEPersistentDiskVolumeSource{
-			PDName:   g.volumeName,
+			PDName:   gVolInfo.volumeName,
 			ReadOnly: readOnly,
 		},
 	}
@@ -1030,10 +1079,11 @@ func (g *gcePdDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSo
 	return &volSource
 }
 
-func (g *gcePdDriver) GetPersistentVolumeSource(readOnly bool, fsType string) *v1.PersistentVolumeSource {
+func (g *gcePdDriver) GetPersistentVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.PersistentVolumeSource {
+	gVolInfo := getGcePDVolumeInfo(volumeInfo)
 	pvSource := v1.PersistentVolumeSource{
 		GCEPersistentDisk: &v1.GCEPersistentDiskVolumeSource{
-			PDName:   g.volumeName,
+			PDName:   gVolInfo.volumeName,
 			ReadOnly: readOnly,
 		},
 	}
@@ -1061,7 +1111,7 @@ func (g *gcePdDriver) CreateDriver() {
 func (g *gcePdDriver) CleanupDriver() {
 }
 
-func (g *gcePdDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (g *gcePdDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	if volType == testpatterns.InlineVolume {
 		// PD will be created in framework.TestContext.CloudConfig.Zone zone,
 		// so pods should be also scheduled there.
@@ -1070,21 +1120,33 @@ func (g *gcePdDriver) CreateVolume(volType testpatterns.TestVolType) {
 		}
 	}
 	By("creating a test gce pd volume")
-	var err error
-	g.volumeName, err = framework.CreatePDWithRetry()
+	volumeName, err := framework.CreatePDWithRetry()
 	Expect(err).NotTo(HaveOccurred())
+
+	return gcePDVolumeInfo{
+		volumeName: volumeName,
+	}
 }
 
-func (g *gcePdDriver) DeleteVolume(volType testpatterns.TestVolType) {
-	framework.DeletePDWithRetry(g.volumeName)
+func (g *gcePdDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
+	gVolInfo := getGcePDVolumeInfo(volumeInfo)
+	framework.DeletePDWithRetry(gVolInfo.volumeName)
 }
 
 // vSphere
 type vSphereDriver struct {
+	driverInfo DriverInfo
+}
+
+type vSphereVolumeInfo struct {
 	volumePath string
 	nodeInfo   *vspheretest.NodeInfo
+}
 
-	driverInfo DriverInfo
+func getVSphereVolumeInfo(volumeInfo interface{}) vSphereVolumeInfo {
+	vVolInfo, ok := volumeInfo.(vSphereVolumeInfo)
+	Expect(ok).To(BeTrue(), "Failed to cast VolumeInfo to vSphereVolumeInfo")
+	return vVolInfo
 }
 
 var _ TestDriver = &vSphereDriver{}
@@ -1117,15 +1179,16 @@ func (v *vSphereDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 	framework.SkipUnlessProviderIs("vsphere")
 }
 
-func (v *vSphereDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (v *vSphereDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
 	// vSphere driver doesn't seem to support readOnly volume
 	// TODO: check if it is correct
 	if readOnly {
 		return nil
 	}
+	vVolInfo := getVSphereVolumeInfo(volumeInfo)
 	volSource := v1.VolumeSource{
 		VsphereVolume: &v1.VsphereVirtualDiskVolumeSource{
-			VolumePath: v.volumePath,
+			VolumePath: vVolInfo.volumePath,
 		},
 	}
 	if fsType != "" {
@@ -1134,15 +1197,16 @@ func (v *vSphereDriver) GetVolumeSource(readOnly bool, fsType string) *v1.Volume
 	return &volSource
 }
 
-func (v *vSphereDriver) GetPersistentVolumeSource(readOnly bool, fsType string) *v1.PersistentVolumeSource {
+func (v *vSphereDriver) GetPersistentVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.PersistentVolumeSource {
 	// vSphere driver doesn't seem to support readOnly volume
 	// TODO: check if it is correct
 	if readOnly {
 		return nil
 	}
+	vVolInfo := getVSphereVolumeInfo(volumeInfo)
 	pvSource := v1.PersistentVolumeSource{
 		VsphereVolume: &v1.VsphereVirtualDiskVolumeSource{
-			VolumePath: v.volumePath,
+			VolumePath: vVolInfo.volumePath,
 		},
 	}
 	if fsType != "" {
@@ -1169,24 +1233,36 @@ func (v *vSphereDriver) CreateDriver() {
 func (v *vSphereDriver) CleanupDriver() {
 }
 
-func (v *vSphereDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (v *vSphereDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	f := v.driverInfo.Framework
 	vspheretest.Bootstrap(f)
-	v.nodeInfo = vspheretest.GetReadySchedulableRandomNodeInfo()
-	var err error
-	v.volumePath, err = v.nodeInfo.VSphere.CreateVolume(&vspheretest.VolumeOptions{}, v.nodeInfo.DataCenterRef)
+	nodeInfo := vspheretest.GetReadySchedulableRandomNodeInfo()
+	volumePath, err := nodeInfo.VSphere.CreateVolume(&vspheretest.VolumeOptions{}, nodeInfo.DataCenterRef)
 	Expect(err).NotTo(HaveOccurred())
+	return vSphereVolumeInfo{
+		volumePath: volumePath,
+		nodeInfo:   nodeInfo,
+	}
 }
 
-func (v *vSphereDriver) DeleteVolume(volType testpatterns.TestVolType) {
-	v.nodeInfo.VSphere.DeleteVolume(v.volumePath, v.nodeInfo.DataCenterRef)
+func (v *vSphereDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
+	vVolInfo := getVSphereVolumeInfo(volumeInfo)
+	vVolInfo.nodeInfo.VSphere.DeleteVolume(vVolInfo.volumePath, vVolInfo.nodeInfo.DataCenterRef)
 }
 
 // Azure
 type azureDriver struct {
-	volumeName string
-
 	driverInfo DriverInfo
+}
+
+type azureVolumeInfo struct {
+	volumeName string
+}
+
+func getAzureVolumeInfo(volumeInfo interface{}) azureVolumeInfo {
+	aVolInfo, ok := volumeInfo.(azureVolumeInfo)
+	Expect(ok).To(BeTrue(), "Failed to cast VolumeInfo to azureVolumeInfo")
+	return aVolInfo
 }
 
 var _ TestDriver = &azureDriver{}
@@ -1220,13 +1296,14 @@ func (a *azureDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 	framework.SkipUnlessProviderIs("azure")
 }
 
-func (a *azureDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
-	diskName := a.volumeName[(strings.LastIndex(a.volumeName, "/") + 1):]
+func (a *azureDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
+	aVolInfo := getAzureVolumeInfo(volumeInfo)
+	diskName := aVolInfo.volumeName[(strings.LastIndex(aVolInfo.volumeName, "/") + 1):]
 
 	volSource := v1.VolumeSource{
 		AzureDisk: &v1.AzureDiskVolumeSource{
 			DiskName:    diskName,
-			DataDiskURI: a.volumeName,
+			DataDiskURI: aVolInfo.volumeName,
 			ReadOnly:    &readOnly,
 		},
 	}
@@ -1236,13 +1313,14 @@ func (a *azureDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSo
 	return &volSource
 }
 
-func (a *azureDriver) GetPersistentVolumeSource(readOnly bool, fsType string) *v1.PersistentVolumeSource {
-	diskName := a.volumeName[(strings.LastIndex(a.volumeName, "/") + 1):]
+func (a *azureDriver) GetPersistentVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.PersistentVolumeSource {
+	aVolInfo := getAzureVolumeInfo(volumeInfo)
+	diskName := aVolInfo.volumeName[(strings.LastIndex(aVolInfo.volumeName, "/") + 1):]
 
 	pvSource := v1.PersistentVolumeSource{
 		AzureDisk: &v1.AzureDiskVolumeSource{
 			DiskName:    diskName,
-			DataDiskURI: a.volumeName,
+			DataDiskURI: aVolInfo.volumeName,
 			ReadOnly:    &readOnly,
 		},
 	}
@@ -1270,23 +1348,35 @@ func (a *azureDriver) CreateDriver() {
 func (a *azureDriver) CleanupDriver() {
 }
 
-func (a *azureDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (a *azureDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	By("creating a test azure disk volume")
-	var err error
-	a.volumeName, err = framework.CreatePDWithRetry()
+	volumeName, err := framework.CreatePDWithRetry()
 	Expect(err).NotTo(HaveOccurred())
+	return azureVolumeInfo{
+		volumeName: volumeName,
+	}
 }
 
-func (a *azureDriver) DeleteVolume(volType testpatterns.TestVolType) {
-	framework.DeletePDWithRetry(a.volumeName)
+func (a *azureDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
+	aVolInfo := getAzureVolumeInfo(volumeInfo)
+	framework.DeletePDWithRetry(aVolInfo.volumeName)
 }
 
 // AWS
 type awsDriver struct {
-	volumeName string
-
 	driverInfo DriverInfo
 }
+
+// TODO: Fix authorization error in attach operation and uncomment below
+//type awsVolumeInfo struct {
+//	volumeName string
+//}
+//
+//func getAwsVolumeInfo(volumeInfo interface{}) awsVolumeInfo {
+//	aVolInfo, ok := volumeInfo.(awsVolumeInfo)
+//	Expect(ok).To(BeTrue(), "Failed to cast VolumeInfo to awsVolumeInfo")
+//	return aVolInfo
+//}
 
 var _ TestDriver = &awsDriver{}
 
@@ -1323,10 +1413,11 @@ func (a *awsDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
 
 // TODO: Fix authorization error in attach operation and uncomment below
 /*
-func (a *awsDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSource {
+func (a *awsDriver) GetVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.VolumeSource {
+	aVolInfo := getAwsVolumeInfo(volumeInfo)
 	volSource := v1.VolumeSource{
 		AWSElasticBlockStore: &v1.AWSElasticBlockStoreVolumeSource{
-			VolumeID: a.volumeName,
+			VolumeID: aVolInfo.volumeName,
 			ReadOnly: readOnly,
 		},
 	}
@@ -1336,10 +1427,11 @@ func (a *awsDriver) GetVolumeSource(readOnly bool, fsType string) *v1.VolumeSour
 	return &volSource
 }
 
-func (a *awsDriver) GetPersistentVolumeSource(readOnly bool, fsType string) *v1.PersistentVolumeSource {
+func (a *awsDriver) GetPersistentVolumeSource(readOnly bool, fsType string, volumeInfo interface{}) *v1.PersistentVolumeSource {
+	aVolInfo := getAwsVolumeInfo(volumeInfo)
 	pvSource := v1.PersistentVolumeSource{
 		AWSElasticBlockStore: &v1.AWSElasticBlockStoreVolumeSource{
-			VolumeID: a.volumeName,
+			VolumeID: aVolInfo.volumeName,
 			ReadOnly: readOnly,
 		},
 	}
@@ -1370,14 +1462,17 @@ func (a *awsDriver) CleanupDriver() {
 
 // TODO: Fix authorization error in attach operation and uncomment below
 /*
-func (a *awsDriver) CreateVolume(volType testpatterns.TestVolType) {
+func (a *awsDriver) CreateVolume(volType testpatterns.TestVolType) interface{} {
 	By("creating a test aws volume")
-	var err error
-	a.volumeName, err = framework.CreatePDWithRetry()
+	volumeName, err := framework.CreatePDWithRetry()
 	Expect(err).NotTo(HaveOccurred())
+	return awsVolumeInfo{
+		volumeName: volumeName,
+	}
 }
 
-func (a *awsDriver) DeleteVolume(volType testpatterns.TestVolType) {
-	framework.DeletePDWithRetry(a.volumeName)
+func (a *awsDriver) DeleteVolume(volType testpatterns.TestVolType, volumeInfo interface{}) {
+	aVolInfo := getAwsVolumeInfo(volumeInfo)
+	framework.DeletePDWithRetry(aVolInfo.volumeName)
 }
 */
