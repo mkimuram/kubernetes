@@ -1060,7 +1060,7 @@ func (og *operationGenerator) GenerateUnmapDeviceFunc(
 	}
 
 	blockVolumeUnmapper, newUnmapperErr := blockVolumePlugin.NewBlockVolumeUnmapper(
-		string(deviceToDetach.VolumeName),
+		deviceToDetach.VolumeSpec.Name(),
 		"" /* podUID */)
 	if newUnmapperErr != nil {
 		return volumetypes.GeneratedOperations{}, deviceToDetach.GenerateErrorDetailed("UnmapDevice.NewUnmapper failed", newUnmapperErr)
@@ -1079,6 +1079,26 @@ func (og *operationGenerator) GenerateUnmapDeviceFunc(
 			return deviceToDetach.GenerateError("UnmapDevice failed", err)
 		}
 
+		// The block volume is not referenced from Pods. Release file descriptor lock.
+		glog.V(4).Infof("UnmapDevice: deviceToDetach.DevicePath: %v", deviceToDetach.DevicePath)
+		loopPath, err := og.blkUtil.GetLoopDevice(deviceToDetach.DevicePath)
+		if err != nil {
+			if err.Error() == volumepathhandler.ErrDeviceNotFound {
+				glog.Warningf(deviceToDetach.GenerateMsgDetailed("UnmapDevice: Couldn't find loopback device which takes file descriptor lock",
+					fmt.Sprintf("device path: %q", deviceToDetach.DevicePath)))
+			} else {
+				glog.Warningf(deviceToDetach.GenerateMsgDetailed("UnmapDevice: GetLoopDevice failed to get loopback device",
+					fmt.Sprintf("device path: %q", deviceToDetach.DevicePath)))
+			}
+		} else {
+			if len(loopPath) != 0 {
+				err = og.blkUtil.RemoveLoopDevice(loopPath)
+				if err != nil {
+					return deviceToDetach.GenerateError("UnmapDevice.RemoveLoopDevice failed", err)
+				}
+			}
+		}
+
 		// Execute tear down device
 		unmapErr := blockVolumeUnmapper.TearDownDevice(globalMapPath, deviceToDetach.DevicePath)
 		if unmapErr != nil {
@@ -1092,25 +1112,6 @@ func (og *operationGenerator) GenerateUnmapDeviceFunc(
 		if removeMapPathErr != nil {
 			// On failure, return error. Caller will log and retry.
 			return deviceToDetach.GenerateError("UnmapDevice failed", removeMapPathErr)
-		}
-
-		// The block volume is not referenced from Pods. Release file descriptor lock.
-		glog.V(4).Infof("UnmapDevice: deviceToDetach.DevicePath: %v", deviceToDetach.DevicePath)
-		loopPath, err := og.blkUtil.GetLoopDevice(deviceToDetach.DevicePath)
-		if err != nil {
-			if err.Error() == volumepathhandler.ErrDeviceNotFound {
-				glog.Warningf(deviceToDetach.GenerateMsgDetailed("UnmapDevice: Couldn't find loopback device which takes file descriptor lock", fmt.Sprintf("device path: %q", deviceToDetach.DevicePath)))
-			} else {
-				errInfo := "UnmapDevice.GetLoopDevice failed to get loopback device, " + fmt.Sprintf("device path: %q", deviceToDetach.DevicePath)
-				return deviceToDetach.GenerateError(errInfo, err)
-			}
-		} else {
-			if len(loopPath) != 0 {
-				err = og.blkUtil.RemoveLoopDevice(loopPath)
-				if err != nil {
-					return deviceToDetach.GenerateError("UnmapDevice.RemoveLoopDevice failed", err)
-				}
-			}
 		}
 
 		// Before logging that UnmapDevice succeeded and moving on,
