@@ -61,15 +61,15 @@ func (m *csiBlockMapper) GetGlobalMapPath(spec *volume.Spec) (string, error) {
 
 // getStagingPath returns a path (on the node) to a device file which will be symlinked to
 // Example: plugins/kubernetes.io/csi/volumeDevices/staging/{volumeID}
-func (m *csiBlockMapper) getStagingPath(specName string) string {
-	sanitizedSpecVolID := kstrings.EscapeQualifiedNameForDisk(specName)
+func (m *csiBlockMapper) getStagingPath() string {
+	sanitizedSpecVolID := kstrings.EscapeQualifiedNameForDisk(m.specName)
 	return path.Join(m.plugin.host.GetVolumeDevicePluginDir(csiPluginName), "staging", sanitizedSpecVolID)
 }
 
 // getPublishPath returns a path (on the node) to a device file which will be symlinked to
 // Example: plugins/kubernetes.io/csi/volumeDevices/publish/{volumeID}
-func (m *csiBlockMapper) getPublishPath(specName string) string {
-	sanitizedSpecVolID := kstrings.EscapeQualifiedNameForDisk(specName)
+func (m *csiBlockMapper) getPublishPath() string {
+	sanitizedSpecVolID := kstrings.EscapeQualifiedNameForDisk(m.specName)
 	return path.Join(m.plugin.host.GetVolumeDevicePluginDir(csiPluginName), "publish", sanitizedSpecVolID)
 }
 
@@ -86,7 +86,7 @@ func (m *csiBlockMapper) GetPodDeviceMapPath() (string, string) {
 func (m *csiBlockMapper) stageVolumeForBlock(csiSource *v1.CSIPersistentVolumeSource, attachment *storage.VolumeAttachment) (string, error) {
 	glog.V(4).Infof(log("blockMapper.stageVolumeForBlock called"))
 
-	stagingPath := m.getStagingPath(m.specName)
+	stagingPath := m.getStagingPath()
 	glog.V(4).Infof(log("blockMapper.stageVolumeForBlock stagingPath set [%s]", stagingPath))
 
 	csi := m.csiClient
@@ -169,7 +169,7 @@ func (m *csiBlockMapper) publishVolumeForBlock(csiSource *v1.CSIPersistentVolume
 		}
 	}
 
-	publishPath := m.getPublishPath(m.specName)
+	publishPath := m.getPublishPath()
 	// setup path directory for stagingPath before call to NodeStageVolume
 	publishDir := filepath.Dir(publishPath)
 	if err := os.MkdirAll(publishDir, 0750); err != nil {
@@ -301,7 +301,7 @@ func (m *csiBlockMapper) TearDownDevice(globalMapPath, devicePath string) error 
 	glog.V(4).Infof(log("unmapper.TearDownDevice(globalMapPath=%s; devicePath=%s)", globalMapPath, devicePath))
 
 	// Call NodeUnpublishVolume
-	publishPath := m.getPublishPath(m.specName)
+	publishPath := m.getPublishPath()
 	if _, err := os.Stat(publishPath); err == nil {
 		if err := m.unpublishVolumeForBlock(publishPath); err != nil {
 			return err
@@ -309,7 +309,7 @@ func (m *csiBlockMapper) TearDownDevice(globalMapPath, devicePath string) error 
 	}
 
 	// Call NodeUnstageVolume
-	stagingPath := m.getStagingPath(m.specName)
+	stagingPath := m.getStagingPath()
 	if _, err := os.Stat(stagingPath); err == nil {
 		if err := m.unstageVolumeForBlock(stagingPath); err != nil {
 			return err
