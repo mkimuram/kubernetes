@@ -27,6 +27,7 @@ import (
 	"github.com/golang/glog"
 
 	"k8s.io/api/core/v1"
+	storage "k8s.io/api/storage/v1beta1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -82,22 +83,8 @@ func (m *csiBlockMapper) GetPodDeviceMapPath() (string, string) {
 }
 
 // SetUpDevice ensures the device is attached returns path where the device is located.
-func (m *csiBlockMapper) stageVolumeForBlock() (string, error) {
-	if !m.plugin.blockEnabled {
-		return "", errors.New("CSIBlockVolume feature not enabled")
-	}
-
+func (m *csiBlockMapper) stageVolumeForBlock(csiSource *v1.CSIPersistentVolumeSource, attachment *storage.VolumeAttachment) (string, error) {
 	glog.V(4).Infof(log("blockMapper.stageVolumeForBlock called"))
-
-	if m.spec == nil {
-		glog.Error(log("blockMapper.Map spec is nil"))
-		return "", fmt.Errorf("spec is nil")
-	}
-	csiSource, err := getCSISourceFromSpec(m.spec)
-	if err != nil {
-		glog.Error(log("blockMapper.stageVolumeForBlock failed to get CSI persistent source: %v", err))
-		return "", err
-	}
 
 	stagingPath := m.getStagingPath(m.specName)
 	glog.V(4).Infof(log("blockMapper.stageVolumeForBlock stagingPath set [%s]", stagingPath))
@@ -118,20 +105,6 @@ func (m *csiBlockMapper) stageVolumeForBlock() (string, error) {
 	}
 
 	// Start MountDevice
-	nodeName := string(m.plugin.host.GetNodeName())
-	attachID := getAttachmentName(csiSource.VolumeHandle, csiSource.Driver, nodeName)
-
-	// search for attachment by VolumeAttachment.Spec.Source.PersistentVolumeName
-	attachment, err := m.k8s.StorageV1beta1().VolumeAttachments().Get(attachID, meta.GetOptions{})
-	if err != nil {
-		glog.Error(log("blockMapper.stageVolumeForBlock failed to get volume attachment [id=%v]: %v", attachID, err))
-		return "", err
-	}
-
-	if attachment == nil {
-		glog.Error(log("blockMapper.stageVolumeForBlock unable to find VolumeAttachment [id=%s]", attachID))
-		return "", errors.New("no existing VolumeAttachment found")
-	}
 	publishVolumeInfo := attachment.Status.AttachmentMetadata
 
 	nodeStageSecrets := map[string]string{}
@@ -169,9 +142,6 @@ func (m *csiBlockMapper) stageVolumeForBlock() (string, error) {
 
 	if err != nil {
 		glog.Error(log("blockMapper.stageVolumeForBlock failed: %v", err))
-		if err := os.RemoveAll(stagingDir); err != nil {
-			glog.Error(log("blockMapper.stageVolumeForBlock failed to remove dir after a NodeStageVolume() error [%s]: %v", stagingDir, err))
-		}
 		return "", err
 	}
 
@@ -179,51 +149,23 @@ func (m *csiBlockMapper) stageVolumeForBlock() (string, error) {
 	return stagingPath, nil
 }
 
-func (m *csiBlockMapper) publishVolumeForBlock(stagingPath string) error {
-	if !m.plugin.blockEnabled {
-		return errors.New("CSIBlockVolume feature not enabled")
-	}
-
+func (m *csiBlockMapper) publishVolumeForBlock(csiSource *v1.CSIPersistentVolumeSource, attachment *storage.VolumeAttachment, stagingPath string) (string, error) {
 	glog.V(4).Infof(log("blockMapper.publishVolumeForBlock called"))
-
-	if m.spec == nil {
-		glog.Error(log("blockMapper.publishVolumeForBlock spec is nil"))
-		return fmt.Errorf("spec is nil")
-	}
-
-	csiSource, err := getCSISourceFromSpec(m.spec)
-	if err != nil {
-		glog.Error(log("blockMapper.publishVolumeForBlock failed to get CSI persistent source: %v", err))
-		return err
-	}
 
 	csi := m.csiClient
 	ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)
 	defer cancel()
 
-	nodeName := string(m.plugin.host.GetNodeName())
-	attachID := getAttachmentName(csiSource.VolumeHandle, csiSource.Driver, nodeName)
-
-	// search for attachment by VolumeAttachment.Spec.Source.PersistentVolumeName
-	attachment, err := m.k8s.StorageV1beta1().VolumeAttachments().Get(attachID, meta.GetOptions{})
-	if err != nil {
-		glog.Error(log("blockMapper.publishVolumeForBlock failed to get volume attachment [id=%v]: %v", attachID, err))
-		return err
-	}
-
-	if attachment == nil {
-		glog.Error(log("blockMapper.publishVolumeForBlock unable to find VolumeAttachment [id=%s]", attachID))
-		return errors.New("no existing VolumeAttachment found")
-	}
 	publishVolumeInfo := attachment.Status.AttachmentMetadata
 
 	nodePublishSecrets := map[string]string{}
+	var err error
 	if csiSource.NodePublishSecretRef != nil {
 		nodePublishSecrets, err = getCredentialsFromSecret(m.k8s, csiSource.NodePublishSecretRef)
 		if err != nil {
 			glog.Errorf("blockMapper.publishVolumeForBlock failed to get NodePublishSecretRef %s/%s: %v",
 				csiSource.NodePublishSecretRef.Namespace, csiSource.NodePublishSecretRef.Name, err)
-			return err
+			return "", err
 		}
 	}
 
@@ -232,7 +174,7 @@ func (m *csiBlockMapper) publishVolumeForBlock(stagingPath string) error {
 	publishDir := filepath.Dir(publishPath)
 	if err := os.MkdirAll(publishDir, 0750); err != nil {
 		glog.Error(log("blockMapper.publishVolumeForBlock failed to create dir %s:  %v", publishDir, err))
-		return err
+		return "", err
 	}
 	glog.V(4).Info(log("blockMapper.publishVolumeForBlock created directory for publishPath successfully [%s]", publishDir))
 
@@ -259,29 +201,57 @@ func (m *csiBlockMapper) publishVolumeForBlock(stagingPath string) error {
 
 	if err != nil {
 		glog.Errorf(log("blockMapper.publishVolumeForBlock failed: %v", err))
-		if err := os.RemoveAll(publishDir); err != nil {
-			glog.Error(log("blockMapper.publishVolumeForBlock failed to remove directory for publishPath after a NodePublish() error [%s]: %v", publishDir, err))
-		}
-		return err
+		return "", err
 	}
 
-	return nil
+	return publishPath, nil
 }
 
 // SetUpDevice ensures the device is attached returns path where the device is located.
 func (m *csiBlockMapper) SetUpDevice() (string, error) {
+	if !m.plugin.blockEnabled {
+		return "", errors.New("CSIBlockVolume feature not enabled")
+	}
+	glog.V(4).Infof(log("blockMapper.SetUpDevice called"))
+
+	// Get csiSource from spec
+	if m.spec == nil {
+		glog.Error(log("blockMapper.SetUpDevice spec is nil"))
+		return "", fmt.Errorf("spec is nil")
+	}
+
+	csiSource, err := getCSISourceFromSpec(m.spec)
+	if err != nil {
+		glog.Error(log("blockMapper.SetUpDevice failed to get CSI persistent source: %v", err))
+		return "", err
+	}
+
+	// Search for attachment by VolumeAttachment.Spec.Source.PersistentVolumeName
+	nodeName := string(m.plugin.host.GetNodeName())
+	attachID := getAttachmentName(csiSource.VolumeHandle, csiSource.Driver, nodeName)
+	attachment, err := m.k8s.StorageV1beta1().VolumeAttachments().Get(attachID, meta.GetOptions{})
+	if err != nil {
+		glog.Error(log("blockMapper.SetupDevice failed to get volume attachment [id=%v]: %v", attachID, err))
+		return "", err
+	}
+
+	if attachment == nil {
+		glog.Error(log("blockMapper.SetupDevice unable to find VolumeAttachment [id=%s]", attachID))
+		return "", errors.New("no existing VolumeAttachment found")
+	}
+
 	// Call NodeStageVolume
-	stagingPath, err := m.stageVolumeForBlock()
+	stagingPath, err := m.stageVolumeForBlock(csiSource, attachment)
 	if err != nil {
 		return "", err
 	}
 
 	// Call NodePublishVolume
-	if err := m.publishVolumeForBlock(stagingPath); err != nil {
+	publishPath, err := m.publishVolumeForBlock(csiSource, attachment, stagingPath)
+	if err != nil {
 		return "", err
 	}
 
-	publishPath := m.getPublishPath(m.specName)
 	return publishPath, nil
 }
 
