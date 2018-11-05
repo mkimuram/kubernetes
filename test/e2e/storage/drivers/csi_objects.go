@@ -17,7 +17,7 @@ limitations under the License.
 // This file is used to deploy the CSI hostPath plugin
 // More Information: https://github.com/kubernetes-csi/drivers/tree/master/pkg/hostpath
 
-package storage
+package drivers
 
 import (
 	"flag"
@@ -64,7 +64,7 @@ func csiContainerImage(image string) string {
 	return fullName
 }
 
-func createCSICRDs(c apiextensionsclient.Interface) {
+func CreateCSICRDs(c apiextensionsclient.Interface) {
 	By("Creating CSI CRDs")
 	crds := []*apiextensionsv1beta1.CustomResourceDefinition{
 		csicrd.CSIDriverCRD(),
