@@ -1,0 +1,62 @@
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-controller-attacher-role-cfg
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: csi-attacher
+    namespace: default
+roleRef:
+  kind: Role
+  name: external-attacher-cfg
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-controller-provisioner-role-cfg
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: csi-provisioner
+    namespace: default
+roleRef:
+  kind: Role
+  name: external-provisioner-cfg
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-nodeplugin-registrar-role
+subjects:
+  - kind: ServiceAccount
+    name: csi-nodeplugin
+    # replace with non-default namespace name
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: driver-registrar-runner
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# priviledged Pod Security Policy, previously defined via PrivilegedTestPSPClusterRoleBinding()
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: psp-csi-controller-driver-registrar-role
+subjects:
+  - kind: ServiceAccount
+    name: csi-provisioner
+    namespace: default
+  - kind: ServiceAccount
+    name: csi-attacher
+    namespace: default
+  - kind: ServiceAccount
+    name: csi-nodeplugin
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: e2e-test-privileged-psp
+  apiGroup: rbac.authorization.k8s.io

@@ -41,6 +41,7 @@ import (
 	"time"
 
 	. "github.com/onsi/ginkgo"
+	"k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/test/e2e/framework"
@@ -278,4 +279,106 @@ func (g *gcePDExternalCSIDriver) CreateDriver() {
 }
 
 func (g *gcePDExternalCSIDriver) CleanupDriver() {
+}
+
+// rbd
+type rbdCSIDriver struct {
+	serverPod *v1.Pod
+	secret    *v1.Secret
+	serverIP  string
+
+	cleanup    func()
+	driverInfo DriverInfo
+}
+
+var _ TestDriver = &rbdCSIDriver{}
+var _ DynamicPVTestDriver = &rbdCSIDriver{}
+
+// InitRbdCSIDriver returns gcePDCSIDriver that implements TestDriver interface
+func InitRbdCSIDriver() TestDriver {
+	return &rbdCSIDriver{
+		driverInfo: DriverInfo{
+			Name:        "csi-rbdplugin",
+			FeatureTag:  "[Feature:Volumes]",
+			MaxFileSize: testpatterns.FileSizeMedium,
+			SupportedFsType: sets.NewString(
+				"", // Default fsType
+				"ext2",
+				"ext4",
+			),
+			IsPersistent:       true,
+			IsFsGroupSupported: true,
+			IsBlockSupported:   false,
+		},
+	}
+}
+
+func (r *rbdCSIDriver) GetDriverInfo() *DriverInfo {
+	return &r.driverInfo
+}
+
+func (r *rbdCSIDriver) SkipUnsupportedTest(pattern testpatterns.TestPattern) {
+}
+
+func (r *rbdCSIDriver) GetDynamicProvisionStorageClass(fsType string) *storagev1.StorageClass {
+	provisioner := r.driverInfo.Name + r.driverInfo.Framework.UniqueName
+	ns := r.driverInfo.Framework.Namespace.Name
+	parameters := map[string]string{
+		"monitors": r.serverIP,
+		"pool":     "rbd",
+		"csiProvisionerSecretName":      r.secret.Name,
+		"csiProvisionerSecretNamespace": ns,
+		"csiNodePublishSecretName":      r.secret.Name,
+		"csiNodePublishSecretNamespace": ns,
+	}
+	suffix := fmt.Sprintf("%s-sc", provisioner)
+
+	return getStorageClass(provisioner, parameters, nil, ns, suffix)
+}
+
+func (r *rbdCSIDriver) CreateDriver() {
+	By("deploying csi rbd driver")
+	f := r.driverInfo.Framework
+	cs := f.ClientSet
+	ns := r.driverInfo.Framework.Namespace.Name
+
+	r.serverPod, r.serverIP = deployCephServer(cs, f, ns)
+	r.secret = deployRbdSecret(cs, ns)
+
+	o := utils.PatchCSIOptions{
+		OldDriverName:            r.driverInfo.Name,
+		NewDriverName:            r.driverInfo.Name + r.driverInfo.Framework.UniqueName,
+		DriverContainerName:      "csi-rbdplugin",
+		ProvisionerContainerName: "csi-provisioner",
+	}
+
+	cleanup, err := r.driverInfo.Framework.CreateFromManifests(func(item interface{}) error {
+		return utils.PatchCSIDeployment(r.driverInfo.Framework, o, item)
+	},
+		"test/e2e/testing-manifests/storage-csi/driver-registrar/rbac.yaml",
+		"test/e2e/testing-manifests/storage-csi/external-attacher/rbac.yaml",
+		"test/e2e/testing-manifests/storage-csi/external-provisioner/rbac.yaml",
+		"test/e2e/testing-manifests/storage-csi/rbd/csi-nodeplugin-rbac.yaml",
+		"test/e2e/testing-manifests/storage-csi/rbd/e2e-test-rbac.yaml",
+		"test/e2e/testing-manifests/storage-csi/rbd/csi-rbdplugin-attacher.yaml",
+		"test/e2e/testing-manifests/storage-csi/rbd/csi-rbdplugin-provisioner.yaml",
+		"test/e2e/testing-manifests/storage-csi/rbd/csi-rbdplugin.yaml",
+	)
+
+	r.cleanup = cleanup
+	if err != nil {
+		framework.Failf("deploying csi rbd driver: %v", err)
+	}
+}
+
+func (r *rbdCSIDriver) CleanupDriver() {
+	By("uninstalling csi rbd driver")
+	f := r.driverInfo.Framework
+	cs := f.ClientSet
+	ns := r.driverInfo.Framework.Namespace.Name
+	if r.cleanup != nil {
+		r.cleanup()
+	}
+
+	deleteCephEnvironment(cs, f, ns, r.secret.Name, r.serverPod)
 }

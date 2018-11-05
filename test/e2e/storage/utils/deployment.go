@@ -76,11 +76,18 @@ func PatchCSIDeployment(f *framework.Framework, o PatchCSIOptions, object interf
 	patchContainers := func(containers []v1.Container) {
 		for i := range containers {
 			container := &containers[i]
+			var driverNameArg, provisionerNameArg *string
 			if rename {
 				for e := range container.Args {
 					// Inject test-specific provider name into paths like this one:
 					// --kubelet-registration-path=/var/lib/kubelet/plugins/csi-hostpath/csi.sock
 					container.Args[e] = strings.Replace(container.Args[e], "/"+o.OldDriverName+"/", "/"+o.NewDriverName+"/", 1)
+					if strings.HasPrefix(container.Args[e], "--drivername=") {
+						driverNameArg = &container.Args[e]
+					}
+					if strings.HasPrefix(container.Args[e], "--provisioner=") {
+						provisionerNameArg = &container.Args[e]
+					}
 				}
 			}
 			// Overwrite driver name resp. provider name
@@ -88,11 +95,19 @@ func PatchCSIDeployment(f *framework.Framework, o PatchCSIOptions, object interf
 			// value.
 			switch container.Name {
 			case o.DriverContainerName:
-				container.Args = append(container.Args, "--drivername="+o.NewDriverName)
+				if driverNameArg != nil {
+					*driverNameArg = "--drivername=" + o.NewDriverName
+				} else {
+					container.Args = append(container.Args, "--drivername="+o.NewDriverName)
+				}
 			case o.ProvisionerContainerName:
 				// Driver name is expected to be the same
 				// as the provisioner here.
-				container.Args = append(container.Args, "--provisioner="+o.NewDriverName)
+				if provisionerNameArg != nil {
+					*provisionerNameArg = "--provisioner=" + o.NewDriverName
+				} else {
+					container.Args = append(container.Args, "--provisioner="+o.NewDriverName)
+				}
 			}
 		}
 	}
