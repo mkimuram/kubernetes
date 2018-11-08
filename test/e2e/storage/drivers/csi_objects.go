@@ -33,6 +33,7 @@ import (
 
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/test/e2e/framework"
+	imageutils "k8s.io/kubernetes/test/utils/image"
 )
 
 var (
@@ -116,4 +117,74 @@ func createGCESecrets(client clientset.Interface, config framework.VolumeTestCon
 
 	_, err = client.CoreV1().Secrets(config.Namespace).Create(s)
 	framework.ExpectNoError(err, "Failed to create Secret %v", s.GetName())
+}
+
+func deployCephServer(
+	client clientset.Interface,
+	f *framework.Framework,
+	namespace string,
+) (*v1.Pod, string) {
+	cephConfig := framework.VolumeTestConfig{
+		Namespace:   namespace,
+		Prefix:      "ceph",
+		ServerImage: imageutils.GetE2EImage(imageutils.VolumeRBDServer),
+		ServerPorts: []int{6789},
+		ServerVolumes: map[string]string{
+			"/lib/modules": "/lib/modules",
+		},
+		ServerReadyMessage: "Ceph is ready",
+	}
+	serverPod, serverIP := framework.CreateStorageServer(client, cephConfig)
+	return serverPod, serverIP
+}
+
+func deleteCephEnvironment(
+	client clientset.Interface,
+	f *framework.Framework,
+	namespace string,
+	secretName string,
+	serverPod *v1.Pod,
+) {
+	secErr := client.CoreV1().Secrets(namespace).Delete(secretName, &metav1.DeleteOptions{})
+	err := framework.DeletePodWithWait(f, client, serverPod)
+	if secErr != nil || err != nil {
+		if secErr != nil {
+			framework.Logf("Ceph server secret delete failed: %v", secErr)
+		}
+		if err != nil {
+			framework.Logf("Ceph server pod delete failed: %v", err)
+		}
+		framework.Failf("Ceph server cleanup failed")
+	}
+}
+
+func deploySecret(
+	client clientset.Interface,
+	namespace string, secretName string,
+	data map[string][]byte,
+) *v1.Secret {
+	secret := &v1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: secretName,
+		},
+		Data: data,
+	}
+	secret, err := client.CoreV1().Secrets(namespace).Create(secret)
+	if err != nil {
+		framework.Logf("Failed to create secret %s: %v", secretName, err)
+	}
+	return secret
+}
+
+func deployRbdSecret(client clientset.Interface, namespace string) *v1.Secret {
+	secretName := "rbd-secret"
+	data := map[string][]byte{
+		// from test/images/volumes-tester/rbd/keyring
+		"admin": []byte("AQDRrKNVbEevChAAEmRC+pW/KBVHxa0w/POILA=="),
+	}
+	return deploySecret(client, namespace, secretName, data)
 }
