@@ -27,8 +27,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/kubernetes/test/e2e/framework"
-	"k8s.io/kubernetes/test/e2e/storage/drivers"
-	"k8s.io/kubernetes/test/e2e/storage/testpatterns"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib/driverlib"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib/patterns"
 	"k8s.io/kubernetes/test/e2e/storage/utils"
 )
 
@@ -38,34 +39,34 @@ const (
 )
 
 type volumeModeTestSuite struct {
-	tsInfo TestSuiteInfo
+	tsInfo testlib.TestSuiteInfo
 }
 
-var _ TestSuite = &volumeModeTestSuite{}
+var _ testlib.TestSuite = &volumeModeTestSuite{}
 
 // InitVolumeModeTestSuite returns volumeModeTestSuite that implements TestSuite interface
-func InitVolumeModeTestSuite() TestSuite {
+func InitVolumeModeTestSuite() testlib.TestSuite {
 	return &volumeModeTestSuite{
-		tsInfo: TestSuiteInfo{
-			name: "volumeMode",
-			testPatterns: []testpatterns.TestPattern{
-				testpatterns.FsVolModePreprovisionedPV,
-				testpatterns.FsVolModeDynamicPV,
-				testpatterns.BlockVolModePreprovisionedPV,
-				testpatterns.BlockVolModeDynamicPV,
+		tsInfo: testlib.TestSuiteInfo{
+			Name: "volumeMode",
+			TestPatterns: []patterns.TestPattern{
+				patterns.FsVolModePreprovisionedPV,
+				patterns.FsVolModeDynamicPV,
+				patterns.BlockVolModePreprovisionedPV,
+				patterns.BlockVolModeDynamicPV,
 			},
 		},
 	}
 }
 
-func (t *volumeModeTestSuite) getTestSuiteInfo() TestSuiteInfo {
+func (t *volumeModeTestSuite) GetTestSuiteInfo() testlib.TestSuiteInfo {
 	return t.tsInfo
 }
 
-func (t *volumeModeTestSuite) skipUnsupportedTest(pattern testpatterns.TestPattern, driver drivers.TestDriver) {
+func (t *volumeModeTestSuite) SkipUnsupportedTest(pattern patterns.TestPattern, driver driverlib.TestDriver) {
 }
 
-func createVolumeModeTestInput(pattern testpatterns.TestPattern, resource volumeModeTestResource) volumeModeTestInput {
+func createVolumeModeTestInput(pattern patterns.TestPattern, resource volumeModeTestResource) volumeModeTestInput {
 	driver := resource.driver
 	dInfo := driver.GetDriverInfo()
 	f := dInfo.Framework
@@ -82,19 +83,19 @@ func createVolumeModeTestInput(pattern testpatterns.TestPattern, resource volume
 	}
 }
 
-func getVolumeModeTestFunc(pattern testpatterns.TestPattern, driver drivers.TestDriver) func(*volumeModeTestInput) {
+func getVolumeModeTestFunc(pattern patterns.TestPattern, driver driverlib.TestDriver) func(*volumeModeTestInput) {
 	dInfo := driver.GetDriverInfo()
 	isBlockSupported := dInfo.IsBlockSupported
 	volMode := pattern.VolMode
 	volType := pattern.VolType
 
 	switch volType {
-	case testpatterns.PreprovisionedPV:
+	case patterns.PreprovisionedPV:
 		if volMode == v1.PersistentVolumeBlock && !isBlockSupported {
 			return testVolumeModeFailForPreprovisionedPV
 		}
 		return testVolumeModeSuccessForPreprovisionedPV
-	case testpatterns.DynamicPV:
+	case patterns.DynamicPV:
 		if volMode == v1.PersistentVolumeBlock && !isBlockSupported {
 			return testVolumeModeFailForDynamicPV
 		}
@@ -105,8 +106,8 @@ func getVolumeModeTestFunc(pattern testpatterns.TestPattern, driver drivers.Test
 	return nil
 }
 
-func (t *volumeModeTestSuite) execTest(driver drivers.TestDriver, pattern testpatterns.TestPattern) {
-	Context(getTestNameStr(t, pattern), func() {
+func (t *volumeModeTestSuite) ExecTest(driver driverlib.TestDriver, pattern patterns.TestPattern) {
+	Context(testlib.GetTestNameStr(t, pattern), func() {
 		var (
 			resource     volumeModeTestResource
 			input        volumeModeTestInput
@@ -119,12 +120,12 @@ func (t *volumeModeTestSuite) execTest(driver drivers.TestDriver, pattern testpa
 		BeforeEach(func() {
 			needsCleanup = false
 			// Skip unsupported tests to avoid unnecessary resource initialization
-			skipUnsupportedTest(t, driver, pattern)
+			testlib.SkipUnsupportedTest(t, driver, pattern)
 			needsCleanup = true
 
 			// Setup test resource for driver and testpattern
 			resource = volumeModeTestResource{}
-			resource.setupResource(driver, pattern)
+			resource.SetupResource(driver, pattern)
 
 			// Create test input
 			input = createVolumeModeTestInput(pattern, resource)
@@ -132,7 +133,7 @@ func (t *volumeModeTestSuite) execTest(driver drivers.TestDriver, pattern testpa
 
 		AfterEach(func() {
 			if needsCleanup {
-				resource.cleanupResource(driver, pattern)
+				resource.CleanupResource(driver, pattern)
 			}
 		})
 
@@ -141,7 +142,7 @@ func (t *volumeModeTestSuite) execTest(driver drivers.TestDriver, pattern testpa
 }
 
 type volumeModeTestResource struct {
-	driver drivers.TestDriver
+	driver driverlib.TestDriver
 
 	sc  *storagev1.StorageClass
 	pvc *v1.PersistentVolumeClaim
@@ -150,9 +151,9 @@ type volumeModeTestResource struct {
 	driverTestResource interface{}
 }
 
-var _ TestResource = &volumeModeTestResource{}
+var _ testlib.TestResource = &volumeModeTestResource{}
 
-func (s *volumeModeTestResource) setupResource(driver drivers.TestDriver, pattern testpatterns.TestPattern) {
+func (s *volumeModeTestResource) SetupResource(driver driverlib.TestDriver, pattern patterns.TestPattern) {
 	s.driver = driver
 	dInfo := driver.GetDriverInfo()
 	f := dInfo.Framework
@@ -168,16 +169,16 @@ func (s *volumeModeTestResource) setupResource(driver drivers.TestDriver, patter
 	)
 
 	// Create volume for pre-provisioned volume tests
-	s.driverTestResource = drivers.CreateVolume(driver, volType)
+	s.driverTestResource = driverlib.CreateVolume(driver, volType)
 
 	switch volType {
-	case testpatterns.PreprovisionedPV:
+	case patterns.PreprovisionedPV:
 		if volMode == v1.PersistentVolumeBlock {
 			scName = fmt.Sprintf("%s-%s-sc-for-block", ns.Name, dInfo.Name)
 		} else if volMode == v1.PersistentVolumeFilesystem {
 			scName = fmt.Sprintf("%s-%s-sc-for-file", ns.Name, dInfo.Name)
 		}
-		if pDriver, ok := driver.(drivers.PreprovisionedPVTestDriver); ok {
+		if pDriver, ok := driver.(driverlib.PreprovisionedPVTestDriver); ok {
 			pvSource = pDriver.GetPersistentVolumeSource(false, fsType, s.driverTestResource)
 			if pvSource == nil {
 				framework.Skipf("Driver %q does not define PersistentVolumeSource - skipping", dInfo.Name)
@@ -188,8 +189,8 @@ func (s *volumeModeTestResource) setupResource(driver drivers.TestDriver, patter
 			s.pv = framework.MakePersistentVolume(pvConfig)
 			s.pvc = framework.MakePersistentVolumeClaim(pvcConfig, ns.Name)
 		}
-	case testpatterns.DynamicPV:
-		if dDriver, ok := driver.(drivers.DynamicPVTestDriver); ok {
+	case patterns.DynamicPV:
+		if dDriver, ok := driver.(driverlib.DynamicPVTestDriver); ok {
 			s.sc = dDriver.GetDynamicProvisionStorageClass(fsType)
 			if s.sc == nil {
 				framework.Skipf("Driver %q does not define Dynamic Provision StorageClass - skipping", dInfo.Name)
@@ -197,7 +198,7 @@ func (s *volumeModeTestResource) setupResource(driver drivers.TestDriver, patter
 			s.sc.VolumeBindingMode = &volBindMode
 
 			claimSize := "5Gi"
-			s.pvc = getClaim(claimSize, ns.Name)
+			s.pvc = testlib.GetClaim(claimSize, ns.Name)
 			s.pvc.Spec.StorageClassName = &s.sc.Name
 			s.pvc.Spec.VolumeMode = &volMode
 		}
@@ -206,7 +207,7 @@ func (s *volumeModeTestResource) setupResource(driver drivers.TestDriver, patter
 	}
 }
 
-func (s *volumeModeTestResource) cleanupResource(driver drivers.TestDriver, pattern testpatterns.TestPattern) {
+func (s *volumeModeTestResource) CleanupResource(driver driverlib.TestDriver, pattern patterns.TestPattern) {
 	dInfo := driver.GetDriverInfo()
 	f := dInfo.Framework
 	cs := f.ClientSet
@@ -220,11 +221,11 @@ func (s *volumeModeTestResource) cleanupResource(driver drivers.TestDriver, patt
 	}
 	By("Deleting sc")
 	if s.sc != nil {
-		deleteStorageClass(cs, s.sc.Name)
+		testlib.DeleteStorageClass(cs, s.sc.Name)
 	}
 
 	// Cleanup volume for pre-provisioned volume tests
-	drivers.DeleteVolume(driver, volType, s.driverTestResource)
+	driverlib.DeleteVolume(driver, volType, s.driverTestResource)
 }
 
 type volumeModeTestInput struct {
@@ -232,7 +233,7 @@ type volumeModeTestInput struct {
 	sc               *storagev1.StorageClass
 	pvc              *v1.PersistentVolumeClaim
 	pv               *v1.PersistentVolume
-	testVolType      testpatterns.TestVolType
+	testVolType      patterns.TestVolType
 	nodeName         string
 	volMode          v1.PersistentVolumeMode
 	isBlockSupported bool

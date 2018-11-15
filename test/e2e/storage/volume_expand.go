@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/test/e2e/framework"
-	"k8s.io/kubernetes/test/e2e/storage/testsuites"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib"
 	"k8s.io/kubernetes/test/e2e/storage/utils"
 )
 
@@ -55,7 +55,7 @@ var _ = utils.SIGDescribe("Volume expand [Slow]", func() {
 		c = f.ClientSet
 		ns = f.Namespace.Name
 		framework.ExpectNoError(framework.WaitForAllNodesSchedulable(c, framework.TestContext.NodeSchedulableTimeout))
-		test := testsuites.StorageClassTest{
+		test := testlib.StorageClassTest{
 			Name:      "default",
 			ClaimSize: "2Gi",
 		}
@@ -134,7 +134,7 @@ var _ = utils.SIGDescribe("Volume expand [Slow]", func() {
 	})
 })
 
-func createResizableStorageClass(t testsuites.StorageClassTest, ns string, suffix string, c clientset.Interface) (*storage.StorageClass, error) {
+func createResizableStorageClass(t testlib.StorageClassTest, ns string, suffix string, c clientset.Interface) (*storage.StorageClass, error) {
 	stKlass := newStorageClass(t, ns, suffix)
 	allowExpansion := true
 	stKlass.AllowVolumeExpansion = &allowExpansion

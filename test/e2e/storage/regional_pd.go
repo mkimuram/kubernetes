@@ -42,7 +42,7 @@ import (
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	"k8s.io/kubernetes/pkg/volume/util"
 	"k8s.io/kubernetes/test/e2e/framework"
-	"k8s.io/kubernetes/test/e2e/storage/testsuites"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib"
 	"k8s.io/kubernetes/test/e2e/storage/utils"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 )
@@ -98,7 +98,7 @@ func testVolumeProvisioning(c clientset.Interface, ns string) {
 
 	// This test checks that dynamic provisioning can provision a volume
 	// that can be used to persist data among pods.
-	tests := []testsuites.StorageClassTest{
+	tests := []testlib.StorageClassTest{
 		{
 			Name:           "HDD Regional PD on GCE/GKE",
 			CloudProviders: []string{"gce", "gke"},
@@ -146,7 +146,7 @@ func testVolumeProvisioning(c clientset.Interface, ns string) {
 		class := newStorageClass(test, ns, "" /* suffix */)
 		claim := newClaim(test, ns, "" /* suffix */)
 		claim.Spec.StorageClassName = &class.Name
-		testsuites.TestDynamicProvisioning(test, c, claim, class)
+		testlib.TestDynamicProvisioning(test, c, claim, class)
 	}
 }
 
@@ -300,7 +300,7 @@ func addTaint(c clientset.Interface, ns string, nodes []v1.Node, podZone string)
 }
 
 func testRegionalDelayedBinding(c clientset.Interface, ns string, pvcCount int) {
-	test := testsuites.StorageClassTest{
+	test := testlib.StorageClassTest{
 		Name:        "Regional PD storage class with waitForFirstConsumer test on GCE",
 		Provisioner: "kubernetes.io/gce-pd",
 		Parameters: map[string]string{
@@ -333,7 +333,7 @@ func testRegionalDelayedBinding(c clientset.Interface, ns string, pvcCount int) 
 }
 
 func testRegionalAllowedTopologies(c clientset.Interface, ns string) {
-	test := testsuites.StorageClassTest{
+	test := testlib.StorageClassTest{
 		Name:        "Regional PD storage class with allowedTopologies test on GCE",
 		Provisioner: "kubernetes.io/gce-pd",
 		Parameters: map[string]string{
@@ -350,12 +350,12 @@ func testRegionalAllowedTopologies(c clientset.Interface, ns string) {
 	addAllowedTopologiesToStorageClass(c, class, zones)
 	claim := newClaim(test, ns, suffix)
 	claim.Spec.StorageClassName = &class.Name
-	pv := testsuites.TestDynamicProvisioning(test, c, claim, class)
+	pv := testlib.TestDynamicProvisioning(test, c, claim, class)
 	checkZonesFromLabelAndAffinity(pv, sets.NewString(zones...), true)
 }
 
 func testRegionalAllowedTopologiesWithDelayedBinding(c clientset.Interface, ns string, pvcCount int) {
-	test := testsuites.StorageClassTest{
+	test := testlib.StorageClassTest{
 		Name:        "Regional PD storage class with allowedTopologies and waitForFirstConsumer test on GCE",
 		Provisioner: "kubernetes.io/gce-pd",
 		Parameters: map[string]string{

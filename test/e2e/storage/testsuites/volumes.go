@@ -26,60 +26,61 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	"k8s.io/kubernetes/test/e2e/framework"
-	"k8s.io/kubernetes/test/e2e/storage/drivers"
-	"k8s.io/kubernetes/test/e2e/storage/testpatterns"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib/driverlib"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib/patterns"
 )
 
 type volumesTestSuite struct {
-	tsInfo TestSuiteInfo
+	tsInfo testlib.TestSuiteInfo
 }
 
-var _ TestSuite = &volumesTestSuite{}
+var _ testlib.TestSuite = &volumesTestSuite{}
 
 // InitVolumesTestSuite returns volumesTestSuite that implements TestSuite interface
-func InitVolumesTestSuite() TestSuite {
+func InitVolumesTestSuite() testlib.TestSuite {
 	return &volumesTestSuite{
-		tsInfo: TestSuiteInfo{
-			name: "volumes",
-			testPatterns: []testpatterns.TestPattern{
+		tsInfo: testlib.TestSuiteInfo{
+			Name: "volumes",
+			TestPatterns: []patterns.TestPattern{
 				// Default fsType
-				testpatterns.DefaultFsInlineVolume,
-				testpatterns.DefaultFsPreprovisionedPV,
-				testpatterns.DefaultFsDynamicPV,
+				patterns.DefaultFsInlineVolume,
+				patterns.DefaultFsPreprovisionedPV,
+				patterns.DefaultFsDynamicPV,
 				// ext3
-				testpatterns.Ext3InlineVolume,
-				testpatterns.Ext3PreprovisionedPV,
-				testpatterns.Ext3DynamicPV,
+				patterns.Ext3InlineVolume,
+				patterns.Ext3PreprovisionedPV,
+				patterns.Ext3DynamicPV,
 				// ext4
-				testpatterns.Ext4InlineVolume,
-				testpatterns.Ext4PreprovisionedPV,
-				testpatterns.Ext4DynamicPV,
+				patterns.Ext4InlineVolume,
+				patterns.Ext4PreprovisionedPV,
+				patterns.Ext4DynamicPV,
 				// xfs
-				testpatterns.XfsInlineVolume,
-				testpatterns.XfsPreprovisionedPV,
-				testpatterns.XfsDynamicPV,
+				patterns.XfsInlineVolume,
+				patterns.XfsPreprovisionedPV,
+				patterns.XfsDynamicPV,
 			},
 		},
 	}
 }
 
-func (t *volumesTestSuite) getTestSuiteInfo() TestSuiteInfo {
+func (t *volumesTestSuite) GetTestSuiteInfo() testlib.TestSuiteInfo {
 	return t.tsInfo
 }
 
-func (t *volumesTestSuite) skipUnsupportedTest(pattern testpatterns.TestPattern, driver drivers.TestDriver) {
+func (t *volumesTestSuite) SkipUnsupportedTest(pattern patterns.TestPattern, driver driverlib.TestDriver) {
 	dInfo := driver.GetDriverInfo()
 	if !dInfo.IsPersistent {
 		framework.Skipf("Driver %q does not provide persistency - skipping", dInfo.Name)
 	}
 }
 
-func createVolumesTestInput(pattern testpatterns.TestPattern, resource genericVolumeTestResource) volumesTestInput {
+func createVolumesTestInput(pattern patterns.TestPattern, resource testlib.GenericVolumeTestResource) volumesTestInput {
 	var fsGroup *int64
-	driver := resource.driver
+	driver := resource.Driver
 	dInfo := driver.GetDriverInfo()
 	f := dInfo.Framework
-	volSource := resource.volSource
+	volSource := resource.VolSource
 
 	if volSource == nil {
 		framework.Skipf("Driver %q does not define volumeSource - skipping", dInfo.Name)
@@ -107,10 +108,10 @@ func createVolumesTestInput(pattern testpatterns.TestPattern, resource genericVo
 	}
 }
 
-func (t *volumesTestSuite) execTest(driver drivers.TestDriver, pattern testpatterns.TestPattern) {
-	Context(getTestNameStr(t, pattern), func() {
+func (t *volumesTestSuite) ExecTest(driver driverlib.TestDriver, pattern patterns.TestPattern) {
+	Context(testlib.GetTestNameStr(t, pattern), func() {
 		var (
-			resource     genericVolumeTestResource
+			resource     testlib.GenericVolumeTestResource
 			input        volumesTestInput
 			needsCleanup bool
 		)
@@ -118,12 +119,12 @@ func (t *volumesTestSuite) execTest(driver drivers.TestDriver, pattern testpatte
 		BeforeEach(func() {
 			needsCleanup = false
 			// Skip unsupported tests to avoid unnecessary resource initialization
-			skipUnsupportedTest(t, driver, pattern)
+			testlib.SkipUnsupportedTest(t, driver, pattern)
 			needsCleanup = true
 
 			// Setup test resource for driver and testpattern
-			resource = genericVolumeTestResource{}
-			resource.setupResource(driver, pattern)
+			resource = testlib.GenericVolumeTestResource{}
+			resource.SetupResource(driver, pattern)
 
 			// Create test input
 			input = createVolumesTestInput(pattern, resource)
@@ -131,7 +132,7 @@ func (t *volumesTestSuite) execTest(driver drivers.TestDriver, pattern testpatte
 
 		AfterEach(func() {
 			if needsCleanup {
-				resource.cleanupResource(driver, pattern)
+				resource.CleanupResource(driver, pattern)
 			}
 		})
 

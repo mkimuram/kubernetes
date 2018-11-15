@@ -28,8 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubernetes/test/e2e/framework"
-	"k8s.io/kubernetes/test/e2e/storage/drivers"
-	"k8s.io/kubernetes/test/e2e/storage/testpatterns"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib/driverlib"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib/patterns"
 	"k8s.io/kubernetes/test/e2e/storage/utils"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
@@ -50,34 +51,34 @@ var (
 )
 
 type subPathTestSuite struct {
-	tsInfo TestSuiteInfo
+	tsInfo testlib.TestSuiteInfo
 }
 
-var _ TestSuite = &subPathTestSuite{}
+var _ testlib.TestSuite = &subPathTestSuite{}
 
 // InitSubPathTestSuite returns subPathTestSuite that implements TestSuite interface
-func InitSubPathTestSuite() TestSuite {
+func InitSubPathTestSuite() testlib.TestSuite {
 	return &subPathTestSuite{
-		tsInfo: TestSuiteInfo{
-			name: "subPath",
-			testPatterns: []testpatterns.TestPattern{
-				testpatterns.DefaultFsInlineVolume,
-				testpatterns.DefaultFsPreprovisionedPV,
-				testpatterns.DefaultFsDynamicPV,
+		tsInfo: testlib.TestSuiteInfo{
+			Name: "subPath",
+			TestPatterns: []patterns.TestPattern{
+				patterns.DefaultFsInlineVolume,
+				patterns.DefaultFsPreprovisionedPV,
+				patterns.DefaultFsDynamicPV,
 			},
 		},
 	}
 }
 
-func (s *subPathTestSuite) getTestSuiteInfo() TestSuiteInfo {
+func (s *subPathTestSuite) GetTestSuiteInfo() testlib.TestSuiteInfo {
 	return s.tsInfo
 }
 
-func (s *subPathTestSuite) skipUnsupportedTest(pattern testpatterns.TestPattern, driver drivers.TestDriver) {
+func (s *subPathTestSuite) SkipUnsupportedTest(pattern patterns.TestPattern, driver driverlib.TestDriver) {
 }
 
-func createSubPathTestInput(pattern testpatterns.TestPattern, resource subPathTestResource) subPathTestInput {
-	driver := resource.driver
+func createSubPathTestInput(pattern patterns.TestPattern, resource subPathTestResource) subPathTestInput {
+	driver := resource.Driver
 	dInfo := driver.GetDriverInfo()
 	f := dInfo.Framework
 	subPath := f.Namespace.Name
@@ -88,16 +89,16 @@ func createSubPathTestInput(pattern testpatterns.TestPattern, resource subPathTe
 		subPathDir:        subPathDir,
 		filePathInSubpath: filepath.Join(volumePath, fileName),
 		filePathInVolume:  filepath.Join(subPathDir, fileName),
-		volType:           resource.volType,
+		volType:           resource.VolType,
 		pod:               resource.pod,
 		formatPod:         resource.formatPod,
-		volSource:         resource.genericVolumeTestResource.volSource,
+		volSource:         resource.VolSource,
 		roVol:             resource.roVolSource,
 	}
 }
 
-func (s *subPathTestSuite) execTest(driver drivers.TestDriver, pattern testpatterns.TestPattern) {
-	Context(getTestNameStr(s, pattern), func() {
+func (s *subPathTestSuite) ExecTest(driver driverlib.TestDriver, pattern patterns.TestPattern) {
+	Context(testlib.GetTestNameStr(s, pattern), func() {
 		var (
 			resource     subPathTestResource
 			input        subPathTestInput
@@ -107,12 +108,12 @@ func (s *subPathTestSuite) execTest(driver drivers.TestDriver, pattern testpatte
 		BeforeEach(func() {
 			needsCleanup = false
 			// Skip unsupported tests to avoid unnecessary resource initialization
-			skipUnsupportedTest(s, driver, pattern)
+			testlib.SkipUnsupportedTest(s, driver, pattern)
 			needsCleanup = true
 
 			// Setup test resource for driver and testpattern
 			resource = subPathTestResource{}
-			resource.setupResource(driver, pattern)
+			resource.SetupResource(driver, pattern)
 
 			// Create test input
 			input = createSubPathTestInput(pattern, resource)
@@ -120,7 +121,7 @@ func (s *subPathTestSuite) execTest(driver drivers.TestDriver, pattern testpatte
 
 		AfterEach(func() {
 			if needsCleanup {
-				resource.cleanupResource(driver, pattern)
+				resource.CleanupResource(driver, pattern)
 			}
 		})
 
@@ -129,42 +130,42 @@ func (s *subPathTestSuite) execTest(driver drivers.TestDriver, pattern testpatte
 }
 
 type subPathTestResource struct {
-	genericVolumeTestResource
+	testlib.GenericVolumeTestResource
 
 	roVolSource *v1.VolumeSource
 	pod         *v1.Pod
 	formatPod   *v1.Pod
 }
 
-var _ TestResource = &subPathTestResource{}
+var _ testlib.TestResource = &subPathTestResource{}
 
-func (s *subPathTestResource) setupResource(driver drivers.TestDriver, pattern testpatterns.TestPattern) {
-	s.driver = driver
-	dInfo := s.driver.GetDriverInfo()
+func (s *subPathTestResource) SetupResource(driver driverlib.TestDriver, pattern patterns.TestPattern) {
+	s.Driver = driver
+	dInfo := s.Driver.GetDriverInfo()
 	f := dInfo.Framework
 	fsType := pattern.FsType
 	volType := pattern.VolType
 
-	// Setup generic test resource
-	s.genericVolumeTestResource.setupResource(driver, pattern)
+	// Setup Generic test resource
+	s.GenericVolumeTestResource.SetupResource(driver, pattern)
 
 	// Setup subPath test dependent resource
 	switch volType {
-	case testpatterns.InlineVolume:
-		if iDriver, ok := driver.(drivers.InlineVolumeTestDriver); ok {
-			s.roVolSource = iDriver.GetVolumeSource(true, fsType, s.genericVolumeTestResource.driverTestResource)
+	case patterns.InlineVolume:
+		if iDriver, ok := driver.(driverlib.InlineVolumeTestDriver); ok {
+			s.roVolSource = iDriver.GetVolumeSource(true, fsType, s.DriverTestResource)
 		}
-	case testpatterns.PreprovisionedPV:
+	case patterns.PreprovisionedPV:
 		s.roVolSource = &v1.VolumeSource{
 			PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-				ClaimName: s.genericVolumeTestResource.pvc.Name,
+				ClaimName: s.GenericVolumeTestResource.Pvc.Name,
 				ReadOnly:  true,
 			},
 		}
-	case testpatterns.DynamicPV:
+	case patterns.DynamicPV:
 		s.roVolSource = &v1.VolumeSource{
 			PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-				ClaimName: s.genericVolumeTestResource.pvc.Name,
+				ClaimName: s.GenericVolumeTestResource.Pvc.Name,
 				ReadOnly:  true,
 			},
 		}
@@ -174,16 +175,16 @@ func (s *subPathTestResource) setupResource(driver drivers.TestDriver, pattern t
 
 	subPath := f.Namespace.Name
 	config := dInfo.Config
-	s.pod = SubpathTestPod(f, subPath, s.volType, s.volSource, true)
+	s.pod = SubpathTestPod(f, subPath, s.VolType, s.VolSource, true)
 	s.pod.Spec.NodeName = config.ClientNodeName
 	s.pod.Spec.NodeSelector = config.NodeSelector
 
-	s.formatPod = volumeFormatPod(f, s.volSource)
+	s.formatPod = volumeFormatPod(f, s.VolSource)
 	s.formatPod.Spec.NodeName = config.ClientNodeName
 	s.formatPod.Spec.NodeSelector = config.NodeSelector
 }
 
-func (s *subPathTestResource) cleanupResource(driver drivers.TestDriver, pattern testpatterns.TestPattern) {
+func (s *subPathTestResource) CleanupResource(driver driverlib.TestDriver, pattern patterns.TestPattern) {
 	dInfo := driver.GetDriverInfo()
 	f := dInfo.Framework
 
@@ -192,8 +193,8 @@ func (s *subPathTestResource) cleanupResource(driver drivers.TestDriver, pattern
 	err := framework.DeletePodWithWait(f, f.ClientSet, s.pod)
 	Expect(err).ToNot(HaveOccurred(), "while deleting pod")
 
-	// Cleanup generic test resource
-	s.genericVolumeTestResource.cleanupResource(driver, pattern)
+	// Cleanup Generic test resource
+	s.GenericVolumeTestResource.CleanupResource(driver, pattern)
 }
 
 type subPathTestInput struct {

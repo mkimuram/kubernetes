@@ -30,9 +30,11 @@ import (
 	csiclient "k8s.io/csi-api/pkg/client/clientset/versioned"
 	"k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/e2e/framework/podlogs"
-	"k8s.io/kubernetes/test/e2e/storage/drivers"
-	"k8s.io/kubernetes/test/e2e/storage/testpatterns"
 	"k8s.io/kubernetes/test/e2e/storage/testsuites"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/drivers"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib/driverlib"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib/patterns"
 	"k8s.io/kubernetes/test/e2e/storage/utils"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
@@ -43,14 +45,14 @@ import (
 )
 
 // List of testDrivers to be executed in below loop
-var csiTestDrivers = []func() drivers.TestDriver{
+var csiTestDrivers = []func() driverlib.TestDriver{
 	drivers.InitHostPathCSIDriver,
 	drivers.InitGcePDCSIDriver,
 	drivers.InitGcePDExternalCSIDriver,
 }
 
-// List of testSuites to be executed in below loop
-var csiTestSuites = []func() testsuites.TestSuite{
+// List of testsuites to be executed in below loop
+var csiTestSuites = []func() testlib.TestSuite{
 	testsuites.InitVolumesTestSuite,
 	testsuites.InitVolumeIOTestSuite,
 	testsuites.InitVolumeModeTestSuite,
@@ -58,12 +60,12 @@ var csiTestSuites = []func() testsuites.TestSuite{
 	testsuites.InitProvisioningTestSuite,
 }
 
-func csiTunePattern(patterns []testpatterns.TestPattern) []testpatterns.TestPattern {
-	tunedPatterns := []testpatterns.TestPattern{}
+func csiTunePattern(p []patterns.TestPattern) []patterns.TestPattern {
+	tunedPatterns := []patterns.TestPattern{}
 
-	for _, pattern := range patterns {
+	for _, pattern := range p {
 		// Skip inline volume and pre-provsioned PV tests for csi drivers
-		if pattern.VolType == testpatterns.InlineVolume || pattern.VolType == testpatterns.PreprovisionedPV {
+		if pattern.VolType == patterns.InlineVolume || pattern.VolType == patterns.PreprovisionedPV {
 			continue
 		}
 		tunedPatterns = append(tunedPatterns, pattern)
@@ -73,6 +75,8 @@ func csiTunePattern(patterns []testpatterns.TestPattern) []testpatterns.TestPatt
 }
 
 // This executes testSuites for csi volumes.
+var _ = utils.SIGDescribe("CSI Volumes", testlib.GetStorageTestFunc("csi-volumes", "csi", csiTestDrivers, csiTestSuites, csiTunePattern))
+
 var _ = utils.SIGDescribe("CSI Volumes", func() {
 	f := framework.NewDefaultFramework("csi-volumes")
 
@@ -123,39 +127,19 @@ var _ = utils.SIGDescribe("CSI Volumes", func() {
 		cancel()
 	})
 
-	for _, initDriver := range csiTestDrivers {
-		curDriver := initDriver()
-		Context(drivers.GetDriverNameWithFeatureTags(curDriver), func() {
-			driver := curDriver
-
-			BeforeEach(func() {
-				// setupDriver
-				drivers.SetCommonDriverParameters(driver, f, config)
-				driver.CreateDriver()
-			})
-
-			AfterEach(func() {
-				// Cleanup driver
-				driver.CleanupDriver()
-			})
-
-			testsuites.RunTestSuite(f, config, driver, csiTestSuites, csiTunePattern)
-		})
-	}
-
 	// The CSIDriverRegistry feature gate is needed for this test in Kubernetes 1.12.
 	Context("CSI attach test using HostPath driver [Feature:CSIDriverRegistry]", func() {
 		var (
 			cs     clientset.Interface
 			csics  csiclient.Interface
-			driver drivers.TestDriver
+			driver driverlib.TestDriver
 		)
 
 		BeforeEach(func() {
 			cs = f.ClientSet
 			csics = f.CSIClientSet
 			driver = drivers.InitHostPathCSIDriver()
-			drivers.SetCommonDriverParameters(driver, f, config)
+			driverlib.SetCommonDriverParameters(driver, f, config)
 			driver.CreateDriver()
 		})
 
@@ -192,7 +176,7 @@ var _ = utils.SIGDescribe("CSI Volumes", func() {
 			test := t
 			It(test.name, func() {
 				if test.driverExists {
-					csiDriver := createCSIDriver(csics, drivers.GetUniqueDriverName(driver), test.driverAttachable)
+					csiDriver := createCSIDriver(csics, driverlib.GetUniqueDriverName(driver), test.driverAttachable)
 					if csiDriver != nil {
 						defer csics.CsiV1alpha1().CSIDrivers().Delete(csiDriver.Name, nil)
 					}
@@ -200,11 +184,11 @@ var _ = utils.SIGDescribe("CSI Volumes", func() {
 
 				By("Creating pod")
 				var sc *storagev1.StorageClass
-				if dDriver, ok := driver.(drivers.DynamicPVTestDriver); ok {
+				if dDriver, ok := driver.(driverlib.DynamicPVTestDriver); ok {
 					sc = dDriver.GetDynamicProvisionStorageClass("")
 				}
 				nodeName := driver.GetDriverInfo().Config.ClientNodeName
-				scTest := testsuites.StorageClassTest{
+				scTest := testlib.StorageClassTest{
 					Name:         driver.GetDriverInfo().Name,
 					Provisioner:  sc.Provisioner,
 					Parameters:   sc.Parameters,
@@ -288,7 +272,7 @@ func getVolumeHandle(cs clientset.Interface, claim *v1.PersistentVolumeClaim) st
 	return pv.Spec.CSI.VolumeHandle
 }
 
-func startPausePod(cs clientset.Interface, t testsuites.StorageClassTest, ns string) (*storagev1.StorageClass, *v1.PersistentVolumeClaim, *v1.Pod) {
+func startPausePod(cs clientset.Interface, t testlib.StorageClassTest, ns string) (*storagev1.StorageClass, *v1.PersistentVolumeClaim, *v1.Pod) {
 	class := newStorageClass(t, ns, "")
 	class, err := cs.StorageV1().StorageClasses().Create(class)
 	framework.ExpectNoError(err, "Failed to create class : %v", err)

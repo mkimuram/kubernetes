@@ -31,7 +31,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/client/conditions"
 	"k8s.io/kubernetes/test/e2e/framework"
-	"k8s.io/kubernetes/test/e2e/storage/testsuites"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib"
 	"k8s.io/kubernetes/test/e2e/storage/utils"
 )
 
@@ -73,7 +73,7 @@ var _ = utils.SIGDescribe("Mounted volume expand[Slow]", func() {
 			isNodeLabeled = true
 		}
 
-		test := testsuites.StorageClassTest{
+		test := testlib.StorageClassTest{
 			Name:      "default",
 			ClaimSize: "2Gi",
 		}

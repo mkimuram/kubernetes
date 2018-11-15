@@ -47,7 +47,7 @@ import (
 	volumeutil "k8s.io/kubernetes/pkg/volume/util"
 	"k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/e2e/framework/providers/gce"
-	"k8s.io/kubernetes/test/e2e/storage/testsuites"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib"
 	"k8s.io/kubernetes/test/e2e/storage/utils"
 )
 
@@ -267,7 +267,7 @@ func testZonalDelayedBinding(c clientset.Interface, ns string, specifyAllowedTop
 	if specifyAllowedTopology {
 		storageClassTestNameSuffix += " with AllowedTopologies"
 	}
-	tests := []testsuites.StorageClassTest{
+	tests := []testlib.StorageClassTest{
 		{
 			Name:           fmt.Sprintf(storageClassTestNameFmt, "EBS", storageClassTestNameSuffix),
 			CloudProviders: []string{"aws"},
@@ -340,7 +340,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 
 			// This test checks that dynamic provisioning can provision a volume
 			// that can be used to persist data among pods.
-			tests := []testsuites.StorageClassTest{
+			tests := []testlib.StorageClassTest{
 				// GCE/GKE
 				{
 					Name:           "SSD PD on GCE/GKE",
@@ -481,7 +481,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 				},
 			}
 
-			var betaTest *testsuites.StorageClassTest
+			var betaTest *testlib.StorageClassTest
 			for i, t := range tests {
 				// Beware of clojure, use local variables instead of those from
 				// outer scope
@@ -500,7 +500,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 				class := newStorageClass(test, ns, suffix)
 				claim := newClaim(test, ns, suffix)
 				claim.Spec.StorageClassName = &class.Name
-				testsuites.TestDynamicProvisioning(test, c, claim, class)
+				testlib.TestDynamicProvisioning(test, c, claim, class)
 			}
 
 			// Run the last test with storage.k8s.io/v1beta1 on pvc
@@ -514,14 +514,14 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 
 				claim := newClaim(*betaTest, ns, "beta")
 				claim.Spec.StorageClassName = &(class.Name)
-				testsuites.TestDynamicProvisioning(*betaTest, c, claim, nil)
+				testlib.TestDynamicProvisioning(*betaTest, c, claim, nil)
 			}
 		})
 
 		It("should provision storage with non-default reclaim policy Retain", func() {
 			framework.SkipUnlessProviderIs("gce", "gke")
 
-			test := testsuites.StorageClassTest{
+			test := testlib.StorageClassTest{
 				Name:           "HDD PD on GCE/GKE",
 				CloudProviders: []string{"gce", "gke"},
 				Provisioner:    "kubernetes.io/gce-pd",
@@ -539,7 +539,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 			class.ReclaimPolicy = &retain
 			claim := newClaim(test, ns, "reclaimpolicy")
 			claim.Spec.StorageClassName = &class.Name
-			pv := testsuites.TestDynamicProvisioning(test, c, claim, class)
+			pv := testlib.TestDynamicProvisioning(test, c, claim, class)
 
 			By(fmt.Sprintf("waiting for the provisioned PV %q to enter phase %s", pv.Name, v1.VolumeReleased))
 			framework.ExpectNoError(framework.WaitForPersistentVolumePhase(v1.VolumeReleased, c, pv.Name, 1*time.Second, 30*time.Second))
@@ -584,7 +584,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 			}
 
 			By("Creating a StorageClass for the unmanaged zone")
-			test := testsuites.StorageClassTest{
+			test := testlib.StorageClassTest{
 				Name:        "unmanaged_zone",
 				Provisioner: "kubernetes.io/gce-pd",
 				Parameters:  map[string]string{"zone": unmanagedZone},
@@ -621,7 +621,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 			const raceAttempts int = 100
 			var residualPVs []*v1.PersistentVolume
 			By(fmt.Sprintf("Creating and deleting PersistentVolumeClaims %d times", raceAttempts))
-			test := testsuites.StorageClassTest{
+			test := testlib.StorageClassTest{
 				Name:        "deletion race",
 				Provisioner: "", // Use a native one based on current cloud provider
 				ClaimSize:   "1Gi",
@@ -772,7 +772,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 			defer framework.DeletePodOrFail(c, ns, pod.Name)
 
 			By("creating a StorageClass")
-			test := testsuites.StorageClassTest{
+			test := testlib.StorageClassTest{
 				Name:         "external provisioner test",
 				Provisioner:  externalPluginName,
 				ClaimSize:    "1500Mi",
@@ -783,7 +783,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 			claim.Spec.StorageClassName = &(class.Name)
 
 			By("creating a claim with a external provisioning annotation")
-			testsuites.TestDynamicProvisioning(test, c, claim, class)
+			testlib.TestDynamicProvisioning(test, c, claim, class)
 		})
 	})
 
@@ -792,21 +792,21 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 			framework.SkipUnlessProviderIs("openstack", "gce", "aws", "gke", "vsphere", "azure")
 
 			By("creating a claim with no annotation")
-			test := testsuites.StorageClassTest{
+			test := testlib.StorageClassTest{
 				Name:         "default",
 				ClaimSize:    "2Gi",
 				ExpectedSize: "2Gi",
 			}
 
 			claim := newClaim(test, ns, "default")
-			testsuites.TestDynamicProvisioning(test, c, claim, nil)
+			testlib.TestDynamicProvisioning(test, c, claim, nil)
 		})
 
 		// Modifying the default storage class can be disruptive to other tests that depend on it
 		It("should be disabled by changing the default annotation [Serial] [Disruptive]", func() {
 			framework.SkipUnlessProviderIs("openstack", "gce", "aws", "gke", "vsphere", "azure")
 			scName := getDefaultStorageClassName(c)
-			test := testsuites.StorageClassTest{
+			test := testlib.StorageClassTest{
 				Name:      "default",
 				ClaimSize: "2Gi",
 			}
@@ -837,7 +837,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 		It("should be disabled by removing the default annotation [Serial] [Disruptive]", func() {
 			framework.SkipUnlessProviderIs("openstack", "gce", "aws", "gke", "vsphere", "azure")
 			scName := getDefaultStorageClassName(c)
-			test := testsuites.StorageClassTest{
+			test := testlib.StorageClassTest{
 				Name:      "default",
 				ClaimSize: "2Gi",
 			}
@@ -871,7 +871,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 			pod := startGlusterDpServerPod(c, ns)
 			serverUrl := "https://" + pod.Status.PodIP + ":8081"
 			By("creating a StorageClass")
-			test := testsuites.StorageClassTest{
+			test := testlib.StorageClassTest{
 				Name:               "Gluster Dynamic provisioner test",
 				Provisioner:        "kubernetes.io/glusterfs",
 				ClaimSize:          "2Gi",
@@ -885,14 +885,14 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 			By("creating a claim object with a suffix for gluster dynamic provisioner")
 			claim := newClaim(test, ns, suffix)
 
-			testsuites.TestDynamicProvisioning(test, c, claim, class)
+			testlib.TestDynamicProvisioning(test, c, claim, class)
 		})
 	})
 
 	Describe("Invalid AWS KMS key", func() {
 		It("should report an error and create no PV", func() {
 			framework.SkipUnlessProviderIs("aws")
-			test := testsuites.StorageClassTest{
+			test := testlib.StorageClassTest{
 				Name:        "AWS EBS with invalid KMS key",
 				Provisioner: "kubernetes.io/aws-ebs",
 				ClaimSize:   "2Gi",
@@ -944,7 +944,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 	})
 	Describe("DynamicProvisioner allowedTopologies", func() {
 		It("should create persistent volume in the zone specified in allowedTopologies of storageclass", func() {
-			tests := []testsuites.StorageClassTest{
+			tests := []testlib.StorageClassTest{
 				{
 					Name:           "AllowedTopologies EBS storage class test",
 					CloudProviders: []string{"aws"},
@@ -972,7 +972,7 @@ var _ = utils.SIGDescribe("Dynamic Provisioning", func() {
 				addSingleZoneAllowedTopologyToStorageClass(c, class, zone)
 				claim := newClaim(test, ns, suffix)
 				claim.Spec.StorageClassName = &class.Name
-				pv := testsuites.TestDynamicProvisioning(test, c, claim, class)
+				pv := testlib.TestDynamicProvisioning(test, c, claim, class)
 				checkZoneFromLabelAndAffinity(pv, zone, true)
 			}
 		})
@@ -1058,7 +1058,7 @@ func getClaim(claimSize string, ns string) *v1.PersistentVolumeClaim {
 	return &claim
 }
 
-func newClaim(t testsuites.StorageClassTest, ns, suffix string) *v1.PersistentVolumeClaim {
+func newClaim(t testlib.StorageClassTest, ns, suffix string) *v1.PersistentVolumeClaim {
 	return getClaim(t.ClaimSize, ns)
 }
 
@@ -1090,7 +1090,7 @@ func addSingleZoneAllowedTopologyToStorageClass(c clientset.Interface, sc *stora
 	sc.AllowedTopologies = append(sc.AllowedTopologies, term)
 }
 
-func newStorageClass(t testsuites.StorageClassTest, ns string, suffix string) *storage.StorageClass {
+func newStorageClass(t testlib.StorageClassTest, ns string, suffix string) *storage.StorageClass {
 	pluginName := t.Provisioner
 	if pluginName == "" {
 		pluginName = getDefaultPluginName()
@@ -1131,7 +1131,7 @@ func getStorageClass(
 }
 
 // TODO: remove when storage.k8s.io/v1beta1 is removed.
-func newBetaStorageClass(t testsuites.StorageClassTest, suffix string) *storagebeta.StorageClass {
+func newBetaStorageClass(t testlib.StorageClassTest, suffix string) *storagebeta.StorageClass {
 	pluginName := t.Provisioner
 
 	if pluginName == "" {

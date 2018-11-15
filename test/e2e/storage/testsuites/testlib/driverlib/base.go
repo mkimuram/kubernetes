@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package drivers
+package driverlib
 
 import (
 	"fmt"
@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/test/e2e/framework"
-	"k8s.io/kubernetes/test/e2e/storage/testpatterns"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib/patterns"
 )
 
 // TestDriver represents an interface for a driver to be tested in TestSuite
@@ -37,16 +37,16 @@ type TestDriver interface {
 	// CreateDriver cleanup all the resources that is created in CreateDriver
 	CleanupDriver()
 	// SkipUnsupportedTest skips test in Testpattern is not suitable to test with the TestDriver
-	SkipUnsupportedTest(testpatterns.TestPattern)
+	SkipUnsupportedTest(patterns.TestPattern)
 }
 
 // PreprovisionedVolumeTestDriver represents an interface for a TestDriver that has pre-provisioned volume
 type PreprovisionedVolumeTestDriver interface {
 	TestDriver
 	// CreateVolume creates a pre-provisioned volume.
-	CreateVolume(testpatterns.TestVolType) interface{}
+	CreateVolume(patterns.TestVolType) interface{}
 	// DeleteVolume deletes a volume that is created in CreateVolume
-	DeleteVolume(testpatterns.TestVolType, interface{})
+	DeleteVolume(patterns.TestVolType, interface{})
 }
 
 // InlineVolumeTestDriver represents an interface for a TestDriver that supports InlineVolume
@@ -107,15 +107,15 @@ func GetDriverNameWithFeatureTags(driver TestDriver) string {
 }
 
 // CreateVolume creates volume for test unless dynamicPV test
-func CreateVolume(driver TestDriver, volType testpatterns.TestVolType) interface{} {
+func CreateVolume(driver TestDriver, volType patterns.TestVolType) interface{} {
 	switch volType {
-	case testpatterns.InlineVolume:
+	case patterns.InlineVolume:
 		fallthrough
-	case testpatterns.PreprovisionedPV:
+	case patterns.PreprovisionedPV:
 		if pDriver, ok := driver.(PreprovisionedVolumeTestDriver); ok {
 			return pDriver.CreateVolume(volType)
 		}
-	case testpatterns.DynamicPV:
+	case patterns.DynamicPV:
 		// No need to create volume
 	default:
 		framework.Failf("Invalid volType specified: %v", volType)
@@ -124,15 +124,15 @@ func CreateVolume(driver TestDriver, volType testpatterns.TestVolType) interface
 }
 
 // DeleteVolume deletes volume for test unless dynamicPV test
-func DeleteVolume(driver TestDriver, volType testpatterns.TestVolType, testResource interface{}) {
+func DeleteVolume(driver TestDriver, volType patterns.TestVolType, testResource interface{}) {
 	switch volType {
-	case testpatterns.InlineVolume:
+	case patterns.InlineVolume:
 		fallthrough
-	case testpatterns.PreprovisionedPV:
+	case patterns.PreprovisionedPV:
 		if pDriver, ok := driver.(PreprovisionedVolumeTestDriver); ok {
 			pDriver.DeleteVolume(volType, testResource)
 		}
-	case testpatterns.DynamicPV:
+	case patterns.DynamicPV:
 		// No need to delete volume
 	default:
 		framework.Failf("Invalid volType specified: %v", volType)
@@ -152,7 +152,7 @@ func SetCommonDriverParameters(
 	dInfo.Config = config
 }
 
-func getStorageClass(
+func GetStorageClass(
 	provisioner string,
 	parameters map[string]string,
 	bindingMode *storagev1.VolumeBindingMode,

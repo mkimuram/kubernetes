@@ -26,7 +26,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/slice"
 	volumeutil "k8s.io/kubernetes/pkg/volume/util"
 	"k8s.io/kubernetes/test/e2e/framework"
-	"k8s.io/kubernetes/test/e2e/storage/testsuites"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib"
 	"k8s.io/kubernetes/test/e2e/storage/utils"
 )
 
@@ -48,7 +48,7 @@ var _ = utils.SIGDescribe("PVC Protection", func() {
 		By("Creating a PVC")
 		suffix := "pvc-protection"
 		defaultSC := getDefaultStorageClassName(client)
-		testStorageClass := testsuites.StorageClassTest{
+		testStorageClass := testlib.StorageClassTest{
 			ClaimSize: "1Gi",
 		}
 		pvc = newClaim(testStorageClass, nameSpace, suffix)

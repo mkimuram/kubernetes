@@ -35,8 +35,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/test/e2e/framework"
-	"k8s.io/kubernetes/test/e2e/storage/drivers"
-	"k8s.io/kubernetes/test/e2e/storage/testpatterns"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib/driverlib"
+	"k8s.io/kubernetes/test/e2e/storage/testsuites/testlib/patterns"
 	"k8s.io/kubernetes/test/e2e/storage/utils"
 )
 
@@ -44,45 +45,45 @@ import (
 // Test files are generated in testVolumeIO()
 // If test file generation algorithm changes, these must be recomputed.
 var md5hashes = map[int64]string{
-	testpatterns.FileSizeSmall:  "5c34c2813223a7ca05a3c2f38c0d1710",
-	testpatterns.FileSizeMedium: "f2fa202b1ffeedda5f3a58bd1ae81104",
-	testpatterns.FileSizeLarge:  "8d763edc71bd16217664793b5a15e403",
+	patterns.FileSizeSmall:  "5c34c2813223a7ca05a3c2f38c0d1710",
+	patterns.FileSizeMedium: "f2fa202b1ffeedda5f3a58bd1ae81104",
+	patterns.FileSizeLarge:  "8d763edc71bd16217664793b5a15e403",
 }
 
 type volumeIOTestSuite struct {
-	tsInfo TestSuiteInfo
+	tsInfo testlib.TestSuiteInfo
 }
 
-var _ TestSuite = &volumeIOTestSuite{}
+var _ testlib.TestSuite = &volumeIOTestSuite{}
 
 // InitVolumeIOTestSuite returns volumeIOTestSuite that implements TestSuite interface
-func InitVolumeIOTestSuite() TestSuite {
+func InitVolumeIOTestSuite() testlib.TestSuite {
 	return &volumeIOTestSuite{
-		tsInfo: TestSuiteInfo{
-			name: "volumeIO",
-			testPatterns: []testpatterns.TestPattern{
-				testpatterns.DefaultFsInlineVolume,
-				testpatterns.DefaultFsPreprovisionedPV,
-				testpatterns.DefaultFsDynamicPV,
+		tsInfo: testlib.TestSuiteInfo{
+			Name: "volumeIO",
+			TestPatterns: []patterns.TestPattern{
+				patterns.DefaultFsInlineVolume,
+				patterns.DefaultFsPreprovisionedPV,
+				patterns.DefaultFsDynamicPV,
 			},
 		},
 	}
 }
 
-func (t *volumeIOTestSuite) getTestSuiteInfo() TestSuiteInfo {
+func (t *volumeIOTestSuite) GetTestSuiteInfo() testlib.TestSuiteInfo {
 	return t.tsInfo
 }
 
-func (t *volumeIOTestSuite) skipUnsupportedTest(pattern testpatterns.TestPattern, driver drivers.TestDriver) {
+func (t *volumeIOTestSuite) SkipUnsupportedTest(pattern patterns.TestPattern, driver driverlib.TestDriver) {
 }
 
-func createVolumeIOTestInput(pattern testpatterns.TestPattern, resource genericVolumeTestResource) volumeIOTestInput {
+func createVolumeIOTestInput(pattern patterns.TestPattern, resource testlib.GenericVolumeTestResource) volumeIOTestInput {
 	var fsGroup *int64
-	driver := resource.driver
+	driver := resource.Driver
 	dInfo := driver.GetDriverInfo()
 	f := dInfo.Framework
 	fileSizes := createFileSizes(dInfo.MaxFileSize)
-	volSource := resource.volSource
+	volSource := resource.VolSource
 
 	if volSource == nil {
 		framework.Skipf("Driver %q does not define volumeSource - skipping", dInfo.Name)
@@ -106,10 +107,10 @@ func createVolumeIOTestInput(pattern testpatterns.TestPattern, resource genericV
 	}
 }
 
-func (t *volumeIOTestSuite) execTest(driver drivers.TestDriver, pattern testpatterns.TestPattern) {
-	Context(getTestNameStr(t, pattern), func() {
+func (t *volumeIOTestSuite) ExecTest(driver driverlib.TestDriver, pattern patterns.TestPattern) {
+	Context(testlib.GetTestNameStr(t, pattern), func() {
 		var (
-			resource     genericVolumeTestResource
+			resource     testlib.GenericVolumeTestResource
 			input        volumeIOTestInput
 			needsCleanup bool
 		)
@@ -117,12 +118,12 @@ func (t *volumeIOTestSuite) execTest(driver drivers.TestDriver, pattern testpatt
 		BeforeEach(func() {
 			needsCleanup = false
 			// Skip unsupported tests to avoid unnecessary resource initialization
-			skipUnsupportedTest(t, driver, pattern)
+			testlib.SkipUnsupportedTest(t, driver, pattern)
 			needsCleanup = true
 
 			// Setup test resource for driver and testpattern
-			resource = genericVolumeTestResource{}
-			resource.setupResource(driver, pattern)
+			resource = testlib.GenericVolumeTestResource{}
+			resource.SetupResource(driver, pattern)
 
 			// Create test input
 			input = createVolumeIOTestInput(pattern, resource)
@@ -130,7 +131,7 @@ func (t *volumeIOTestSuite) execTest(driver drivers.TestDriver, pattern testpatt
 
 		AfterEach(func() {
 			if needsCleanup {
-				resource.cleanupResource(driver, pattern)
+				resource.CleanupResource(driver, pattern)
 			}
 		})
 
@@ -160,9 +161,9 @@ func execTestVolumeIO(input *volumeIOTestInput) {
 
 func createFileSizes(maxFileSize int64) []int64 {
 	allFileSizes := []int64{
-		testpatterns.FileSizeSmall,
-		testpatterns.FileSizeMedium,
-		testpatterns.FileSizeLarge,
+		patterns.FileSizeSmall,
+		patterns.FileSizeMedium,
+		patterns.FileSizeLarge,
 	}
 	fileSizes := []int64{}
 
@@ -244,8 +245,8 @@ func makePodSpec(config framework.VolumeTestConfig, dir, initCmd string, volsrc 
 // Write `fsize` bytes to `fpath` in the pod, using dd and the `ddInput` file.
 func writeToFile(pod *v1.Pod, fpath, ddInput string, fsize int64) error {
 	By(fmt.Sprintf("writing %d bytes to test file %s", fsize, fpath))
-	loopCnt := fsize / testpatterns.MinFileSize
-	writeCmd := fmt.Sprintf("i=0; while [ $i -lt %d ]; do dd if=%s bs=%d >>%s 2>/dev/null; let i+=1; done", loopCnt, ddInput, testpatterns.MinFileSize, fpath)
+	loopCnt := fsize / patterns.MinFileSize
+	writeCmd := fmt.Sprintf("i=0; while [ $i -lt %d ]; do dd if=%s bs=%d >>%s 2>/dev/null; let i+=1; done", loopCnt, ddInput, patterns.MinFileSize, fpath)
 	_, err := utils.PodExec(pod, writeCmd)
 
 	return err
@@ -305,7 +306,7 @@ func testVolumeIO(f *framework.Framework, cs clientset.Interface, config framewo
 	dir := path.Join("/opt", config.Prefix, config.Namespace)
 	ddInput := path.Join(dir, "dd_if")
 	writeBlk := strings.Repeat("abcdefghijklmnopqrstuvwxyz123456", 32) // 1KiB value
-	loopCnt := testpatterns.MinFileSize / int64(len(writeBlk))
+	loopCnt := patterns.MinFileSize / int64(len(writeBlk))
 	// initContainer cmd to create and fill dd's input file. The initContainer is used to create
 	// the `dd` input file which is currently 1MiB. Rather than store a 1MiB go value, a loop is
 	// used to create a 1MiB file in the target directory.
@@ -342,8 +343,8 @@ func testVolumeIO(f *framework.Framework, cs clientset.Interface, config framewo
 	// create files of the passed-in file sizes and verify test file size and content
 	for _, fsize := range fsizes {
 		// file sizes must be a multiple of `MinFileSize`
-		if math.Mod(float64(fsize), float64(testpatterns.MinFileSize)) != 0 {
-			fsize = fsize/testpatterns.MinFileSize + testpatterns.MinFileSize
+		if math.Mod(float64(fsize), float64(patterns.MinFileSize)) != 0 {
+			fsize = fsize/patterns.MinFileSize + patterns.MinFileSize
 		}
 		fpath := path.Join(dir, fmt.Sprintf("%s-%d", file, fsize))
 		if err = writeToFile(clientPod, fpath, ddInput, fsize); err != nil {
