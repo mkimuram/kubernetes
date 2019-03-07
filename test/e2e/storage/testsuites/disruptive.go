@@ -83,6 +83,11 @@ func (s *disruptiveTestSuite) defineTests(driver TestDriver, pattern testpattern
 
 		// Now do the more expensive test initialization.
 		l.config, l.testCleanup = driver.PrepareTest(f)
+
+		if pattern.VolMode == v1.PersistentVolumeBlock && !driver.GetDriverInfo().Capabilities[CapBlock] {
+			framework.Skipf("Driver %s doesn't support %v -- skipping", driver.GetDriverInfo().Name, pattern.VolMode)
+		}
+
 		l.resource = createGenericVolumeTestResource(driver, l.config, pattern)
 	}
 
@@ -134,10 +139,6 @@ func (s *disruptiveTestSuite) defineTests(driver TestDriver, pattern testpattern
 			It(t.testItStmt, func() {
 				init()
 				defer cleanup()
-
-				if pattern.VolMode == v1.PersistentVolumeBlock && !l.resource.driver.GetDriverInfo().Capabilities[CapBlock] {
-					framework.Skipf("Driver %s doesn't support %v -- skipping", l.resource.driver.GetDriverInfo().Name, pattern.VolMode)
-				}
 
 				var err error
 				By("Creating a pod with pvc")
