@@ -1148,6 +1148,7 @@ func InitGcePdDriver() testsuites.TestDriver {
 				testsuites.CapFsGroup:     true,
 				testsuites.CapBlock:       true,
 				testsuites.CapExec:        true,
+				testsuites.CapExpansion:   true,
 			},
 		},
 	}
@@ -1207,7 +1208,7 @@ func (g *gcePdDriver) GetDynamicProvisionStorageClass(config *testsuites.PerTest
 	return testsuites.GetStorageClass(provisioner, parameters, &delayedBinding, ns, suffix)
 }
 
-func (h *gcePdDriver) GetClaimSize() string {
+func (g *gcePdDriver) GetClaimSize() string {
 	return "5Gi"
 }
 
@@ -1520,6 +1521,7 @@ func InitAwsDriver() testsuites.TestDriver {
 				testsuites.CapFsGroup:     true,
 				testsuites.CapBlock:       true,
 				testsuites.CapExec:        true,
+				testsuites.CapExpansion:   true,
 			},
 		},
 	}
@@ -1652,6 +1654,7 @@ var _ testsuites.TestDriver = &localDriver{}
 var _ testsuites.PreprovisionedVolumeTestDriver = &localDriver{}
 var _ testsuites.PreprovisionedPVTestDriver = &localDriver{}
 
+// InitLocalDriverWithVolumeType returns localDriver that implements TestDriver interface
 func InitLocalDriverWithVolumeType(volumeType utils.LocalVolumeType) func() testsuites.TestDriver {
 	maxFileSize := defaultLocalVolumeMaxFileSize
 	if maxFileSizeByVolType, ok := localVolumeMaxFileSizes[volumeType]; ok {
