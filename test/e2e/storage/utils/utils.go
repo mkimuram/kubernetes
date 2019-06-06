@@ -103,7 +103,7 @@ func VerifyExecInPodFail(pod *v1.Pod, bashExec string, exitCode int) {
 }
 
 func isSudoPresent(nodeIP string, provider string) bool {
-	framework.Logf("Checking if sudo command is present")
+	e2elog.Logf("Checking if sudo command is present")
 	sshResult, err := e2essh.SSH("sudo --version", nodeIP, provider)
 	framework.ExpectNoError(err, "SSH to %q errored.", nodeIP)
 	if !strings.Contains(sshResult.Stderr, "command not found") {
@@ -214,7 +214,7 @@ func TestKubeletRestartsAndRestoresMount(c clientset.Interface, f *framework.Fra
 	ginkgo.By("Testing that written file is accessible.")
 	CheckReadFromPath(clientPod, v1.PersistentVolumeFilesystem, path, byteLen, seed)
 
-	framework.Logf("Volume mount detected on pod %s and written file %s is readable post-restart.", clientPod.Name, path)
+	e2elog.Logf("Volume mount detected on pod %s and written file %s is readable post-restart.", clientPod.Name, path)
 }
 
 // TestKubeletRestartsAndRestoresMap tests that a volume mapped to a pod remains mapped after a kubelet restarts
