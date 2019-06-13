@@ -17,14 +17,12 @@ limitations under the License.
 package testsuites
 
 import (
+	"github.com/onsi/ginkgo"
 	"k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/e2e/storage/testpatterns"
 	"k8s.io/kubernetes/test/e2e/storage/utils"
-
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 )
 
 type disruptiveTestSuite struct {
@@ -93,9 +91,9 @@ func (s *disruptiveTestSuite) defineTests(driver TestDriver, pattern testpattern
 
 	cleanup := func() {
 		if l.pod != nil {
-			By("Deleting pod")
+			ginkgo.By("Deleting pod")
 			err := framework.DeletePodWithWait(f, f.ClientSet, l.pod)
-			Expect(err).ToNot(HaveOccurred(), "while deleting pod")
+			framework.ExpectNoError(err, "while deleting pod")
 			l.pod = nil
 		}
 
@@ -136,14 +134,14 @@ func (s *disruptiveTestSuite) defineTests(driver TestDriver, pattern testpattern
 
 	for _, test := range disruptiveTestTable {
 		func(t disruptiveTest) {
-			It(t.testItStmt, func() {
+			ginkgo.It(t.testItStmt, func() {
 				init()
 				defer cleanup()
 
 				var err error
-				By("Creating a pod with pvc")
+				ginkgo.By("Creating a pod with pvc")
 				l.pod, err = framework.CreateSecPodWithNodeSelection(l.cs, l.ns.Name, []*v1.PersistentVolumeClaim{l.resource.pvc}, false, "", false, false, framework.SELinuxLabel, nil, framework.NodeSelection{Name: l.config.ClientNodeName}, framework.PodStartTimeout)
-				Expect(err).NotTo(HaveOccurred(), "While creating pods for kubelet restart test")
+				framework.ExpectNoError(err, "While creating pods for kubelet restart test")
 
 				if pattern.VolMode == v1.PersistentVolumeBlock {
 					t.runTestBlock(l.cs, l.config.Framework, l.pod)

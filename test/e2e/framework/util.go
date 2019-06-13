@@ -2746,7 +2746,7 @@ func GetHostAddress(client clientset.Interface, p *v1.Pod) (string, error) {
 	}
 
 	// If not found, return error
-	return "", fmt.Errorf("No external address for pod %v on node %v",
+	return "", fmt.Errorf("No address for pod %v on node %v",
 		p.Name, p.Spec.NodeName)
 }
 
