@@ -38,6 +38,12 @@ type ProxyProvider interface {
 	SyncLoop()
 }
 
+// EgressProxyProvider is the interface provided by proxier that also implements EgressHandler.
+type EgressProxyProvider interface {
+	ProxyProvider
+	config.EgressHandler
+}
+
 // ServicePortName carries a namespace + name + portname.  This is the unique
 // identifier for a load-balanced service.
 type ServicePortName struct {

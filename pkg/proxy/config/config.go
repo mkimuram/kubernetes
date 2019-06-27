@@ -45,6 +45,23 @@ type ServiceHandler interface {
 	OnServiceSynced()
 }
 
+// EgressHandler is an abstract interface of objects which receive
+// notifications about egress object changes.
+type EgressHandler interface {
+	// OnEgressAdd is called whenever creation of new egress object
+	// is observed.
+	OnEgressAdd(egress *v1.Egress)
+	// OnEgressUpdate is called whenever modification of an existing
+	// egress object is observed.
+	OnEgressUpdate(oldEgress, egress *v1.Egress)
+	// OnEgressDelete is called whenever deletion of an existing egress
+	// object is observed.
+	OnEgressDelete(egress *v1.Egress)
+	// OnEgressSynced is called once all the initial even handlers were
+	// called and the state is fully propagated to local cache.
+	OnEgressSynced()
+}
+
 // EndpointsHandler is an abstract interface of objects which receive
 // notifications about endpoints object changes.
 type EndpointsHandler interface {

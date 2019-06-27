@@ -81,6 +81,12 @@ const (
 
 	// the kubernetes forward chain
 	kubeForwardChain utiliptables.Chain = "KUBE-FORWARD"
+
+	// the kubernetes egress prerouting chain
+	kubeEgressPreroutingChain utiliptables.Chain = "KUBE-EGRESS-PRE"
+
+	// the kubernetes egress forward chain
+	kubeEgressFowardChain utiliptables.Chain = "KUBE-EGRESS-FWD"
 )
 
 // Versioner can query the current iptables version.
@@ -211,6 +217,7 @@ type Proxier struct {
 	// current is state after applying all of those.
 	endpointsChanges *proxy.EndpointChangeTracker
 	serviceChanges   *proxy.ServiceChangeTracker
+	egressChanges    *proxy.EgressChangeTracker
 
 	mu           sync.Mutex // protects the following fields
 	serviceMap   proxy.ServiceMap
@@ -221,6 +228,7 @@ type Proxier struct {
 	// with some partial data after kube-proxy restart.
 	endpointsSynced bool
 	servicesSynced  bool
+	egressSynced    bool
 	initialized     int32
 	syncRunner      *async.BoundedFrequencyRunner // governs calls to syncProxyRules
 
@@ -246,10 +254,13 @@ type Proxier struct {
 	// that are significantly impacting performance.
 	iptablesData             *bytes.Buffer
 	existingFilterChainsData *bytes.Buffer
+	existingMangleChainsData *bytes.Buffer
 	filterChains             *bytes.Buffer
 	filterRules              *bytes.Buffer
 	natChains                *bytes.Buffer
 	natRules                 *bytes.Buffer
+	mangleChains             *bytes.Buffer
+	mangleRules              *bytes.Buffer
 
 	// endpointChainsNumber is the total amount of endpointChains across all
 	// services that we will generate (it is computed at the beginning of
@@ -332,6 +343,8 @@ func NewProxier(ipt utiliptables.Interface,
 		serviceChanges:           proxy.NewServiceChangeTracker(newServiceInfo, &isIPv6, recorder),
 		endpointsMap:             make(proxy.EndpointsMap),
 		endpointsChanges:         proxy.NewEndpointChangeTracker(hostname, newEndpointInfo, &isIPv6, recorder),
+		egressMap:                make(proxy.EgressMap),
+		egressChanges:            proxy.NewEgressChangeTracker(),
 		iptables:                 ipt,
 		masqueradeAll:            masqueradeAll,
 		masqueradeMark:           masqueradeMark,
@@ -346,10 +359,13 @@ func NewProxier(ipt utiliptables.Interface,
 		precomputedProbabilities: make([]string, 0, 1001),
 		iptablesData:             bytes.NewBuffer(nil),
 		existingFilterChainsData: bytes.NewBuffer(nil),
+		existingMangleChainsData: bytes.NewBuffer(nil),
 		filterChains:             bytes.NewBuffer(nil),
 		filterRules:              bytes.NewBuffer(nil),
 		natChains:                bytes.NewBuffer(nil),
 		natRules:                 bytes.NewBuffer(nil),
+		mangleChains:             bytes.NewBuffer(nil),
+		mangleRules:              bytes.NewBuffer(nil),
 		nodePortAddresses:        nodePortAddresses,
 		networkInterfacer:        utilproxy.RealNetwork{},
 	}
@@ -376,6 +392,8 @@ var iptablesJumpChains = []iptablesJumpChain{
 	{utiliptables.TableNAT, kubeServicesChain, utiliptables.ChainOutput, "kubernetes service portals", nil},
 	{utiliptables.TableNAT, kubeServicesChain, utiliptables.ChainPrerouting, "kubernetes service portals", nil},
 	{utiliptables.TableNAT, kubePostroutingChain, utiliptables.ChainPostrouting, "kubernetes postrouting rules", nil},
+	{utiliptables.TableMangle, kubeEgressPreroutingChain, utiliptables.ChainPrerouting, "kubernetes egress prerouting rules", nil},
+	{utiliptables.TableMangle, kubeEgressFowardChain, utiliptables.ChainForward, "kubernetes egress forward rules", nil},
 }
 
 var iptablesCleanupOnlyChains = []iptablesJumpChain{}
@@ -574,6 +592,40 @@ func (proxier *Proxier) OnEndpointsSynced() {
 	proxier.syncProxyRules()
 }
 
+// OnEgressAdd is called whenever creation of new egress object
+// is observed.
+func (proxier *Proxier) OnEgressAdd(egress *v1.Egress) {
+	proxier.OnEgressUpdate(nil, egress)
+}
+
+// OnEgressUpdate is called whenever modification of an existing
+// egress object is observed.
+func (proxier *Proxier) OnEgressUpdate(oldEgress, egress *v1.Egress) {
+	if proxier.egressChanges.Update(oldEgress, egress) && proxier.isInitialized() {
+		proxier.syncRunner.Run()
+	}
+}
+
+// OnEgressDelete is called whenever deletion of an existing egress
+// object is observed.
+func (proxier *Proxier) OnEgressDelete(egress *v1.Egress) {
+	proxier.OnEgressUpdate(egress, nil)
+
+}
+
+// OnEgressSynced is called once all the initial even handlers were
+// called and the state is fully propagated to local cache.
+func (proxier *Proxier) OnEgressSynced() {
+	proxier.mu.Lock()
+	proxier.egressSynced = true
+	// TODO: Consider improving logic
+	proxier.setInitialized(proxier.egressSynced && proxier.endpointsSynced)
+	proxier.mu.Unlock()
+
+	// Sync unconditionally - this is called once per lifetime.
+	proxier.syncProxyRules()
+}
+
 // portProtoHash takes the ServicePortName and protocol for a service
 // returns the associated 16 character hash. This is computed by hashing (sha256)
 // then encoding to base32 and truncating to 16 chars. We do this because IPTables
@@ -675,8 +727,8 @@ func (proxier *Proxier) syncProxyRules() {
 		klog.V(4).Infof("syncProxyRules took %v", time.Since(start))
 	}()
 	// don't sync rules till we've received services and endpoints
-	if !proxier.endpointsSynced || !proxier.servicesSynced {
-		klog.V(2).Info("Not syncing iptables until Services and Endpoints have been received from master")
+	if !proxier.endpointsSynced || !proxier.servicesSynced || !proxier.egressSynced {
+		klog.V(2).Info("Not syncing iptables until Services, Endpoints, and Egresses have been received from master")
 		return
 	}
 
@@ -684,6 +736,7 @@ func (proxier *Proxier) syncProxyRules() {
 	// even if nothing changed in the meantime. In other words, callers are
 	// responsible for detecting no-op changes and not calling this function.
 	serviceUpdateResult := proxy.UpdateServiceMap(proxier.serviceMap, proxier.serviceChanges)
+	egressUpdateResult := proxy.UpdateEgressMap(proxier.egressMap, proxier.egressChanges)
 	endpointUpdateResult := proxier.endpointsMap.Update(proxier.endpointsChanges)
 
 	staleServices := serviceUpdateResult.UDPStaleClusterIP
@@ -731,6 +784,15 @@ func (proxier *Proxier) syncProxyRules() {
 		existingFilterChains = utiliptables.GetChainLines(utiliptables.TableFilter, proxier.existingFilterChainsData.Bytes())
 	}
 
+	existingMangleChains := make(map[utiliptables.Chain][]byte)
+	proxier.iptablesMangleChainsData.Reset()
+	err = proxier.iptables.SaveInto(utiliptables.TableMangle, proxier.proxier.existingMangleChainsData)
+	if err != nil { // if we failed to get any rules
+		klog.Errorf("Failed to execute iptables-save, syncing all rules: %v", err)
+	} else { // otherwise parse the output
+		existingMangleChains = utiliptables.GetChainLines(utiliptables.TableMangle, proxier.existingMangleChainsData.Bytes())
+	}
+
 	// IMPORTANT: existingNATChains may share memory with proxier.iptablesData.
 	existingNATChains := make(map[utiliptables.Chain][]byte)
 	proxier.iptablesData.Reset()
@@ -747,10 +809,13 @@ func (proxier *Proxier) syncProxyRules() {
 	proxier.filterRules.Reset()
 	proxier.natChains.Reset()
 	proxier.natRules.Reset()
+	proxier.mangleChains.Reset()
+	proxier.mangleRules.Reset()
 
 	// Write table headers.
 	writeLine(proxier.filterChains, "*filter")
 	writeLine(proxier.natChains, "*nat")
+	writeLine(proxier.mangleChains, "*mangle")
 
 	// Make sure we keep stats for the top-level chains, if they existed
 	// (which most should have because we created them above).
@@ -761,11 +826,42 @@ func (proxier *Proxier) syncProxyRules() {
 			writeLine(proxier.filterChains, utiliptables.MakeChainLine(chainName))
 		}
 	}
+	for _, chainName := range []utiliptables.Chain{kubeEgressPreroutingChain, kubeEgressFowardChain} {
+		if chain, ok := existingMangleChains[chainName]; ok {
+			writeBytesLine(proxier.filterChains, chain)
+		} else {
+			writeLine(proxier.filterChains, utiliptables.MakeChainLine(chainName))
+		}
+	}
 	for _, chainName := range []utiliptables.Chain{kubeServicesChain, kubeNodePortsChain, kubePostroutingChain, KubeMarkMasqChain} {
 		if chain, ok := existingNATChains[chainName]; ok {
 			writeBytesLine(proxier.natChains, chain)
 		} else {
 			writeLine(proxier.natChains, utiliptables.MakeChainLine(chainName))
+		}
+	}
+
+	// TODO: write egress Nat rules for post routing, before kubernetes-specific postrouting rules below
+	egress := map[string]string{} // Fixme
+	primary := false              // Fixme
+	routeID := ""                 // Fixme
+	routeIDMask := ""             // Fixme
+	for _, ip := range egress {
+		if primary {
+			writeLine(proxier.natRules, []string{
+				"-A", string(kubePostroutingChain),
+				"-m", "comment", "--comment", fmt.Sprintf("`SNAT to %s to handle egress for packets with %s/%s mark`", ip, routeID, routeIDMask),
+				"-m", "mark", "--mark", fmt.Sprintf("%s/%s", routeID, routeIDMask),
+				"-j", "SNAT",
+				"--to", ip,
+			}...)
+		} else {
+			writeLine(proxier.natRules, []string{
+				"-A", string(kubePostroutingChain),
+				"-m", "comment", "--comment", fmt.Sprintf("`Skip kubernetes default SNAT rules to handle egress for packets with %s/%s mark`", routeID, routeIDMask),
+				"-m", "mark", "--mark", fmt.Sprintf("%v/%v", routeID, routeIDMask),
+				"-j", "ACCEPT",
+			}...)
 		}
 	}
 
@@ -1214,6 +1310,8 @@ func (proxier *Proxier) syncProxyRules() {
 			args = append(args, "-m", protocol, "-p", protocol, "-j", "DNAT", "--to-destination", endpoints[i].Endpoint)
 			writeLine(proxier.natRules, args...)
 		}
+
+		// TODO: Write per endpoints rule for egress here
 
 		// The logic below this applies only if this service is marked as OnlyLocal
 		if !svcInfo.OnlyNodeLocalEndpoints() {

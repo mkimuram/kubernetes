@@ -3384,6 +3384,30 @@ type ServiceAccountList struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+// EgressSpec describes the attributes that a user creates on an egress
+type EgressSpec struct {
+	// IP is the IP address of the egress.
+	IP string
+
+	// Route egress traffic from pods with label keys and values matching this
+	// selector.
+	Selector map[string]string
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// Egress is a named abstraction of source IP of outgoing packet from pod
+type Egress struct {
+	metav1.TypeMeta
+	// +optional
+	metav1.ObjectMeta
+
+	// Spec defines the behavior of an egress.
+	Spec EgressSpec
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
 // Endpoints is a collection of endpoints that implement the actual service.  Example:
 //   Name: "mysvc",
 //   Subsets: [
