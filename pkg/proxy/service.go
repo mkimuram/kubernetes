@@ -51,12 +51,16 @@ type BaseServiceInfo struct {
 	loadBalancerSourceRanges []string
 	healthCheckNodePort      int
 	onlyNodeLocalEndpoints   bool
+	egressIP                 net.IP
 }
 
 var _ ServicePort = &BaseServiceInfo{}
 
 // String is part of ServicePort interface.
 func (info *BaseServiceInfo) String() string {
+	if info.egressIP != nil {
+		return fmt.Sprintf("%s/egress", info.egressIP)
+	}
 	return fmt.Sprintf("%s:%d/%s", info.clusterIP, info.port, info.protocol)
 }
 
@@ -119,6 +123,11 @@ func (info *BaseServiceInfo) OnlyNodeLocalEndpoints() bool {
 	return info.onlyNodeLocalEndpoints
 }
 
+// EgressIP is part of ServicePort interface.
+func (info *BaseServiceInfo) EgressIP() net.IP {
+	return info.egressIP
+}
+
 func (sct *ServiceChangeTracker) newBaseServiceInfo(port *v1.ServicePort, service *v1.Service) *BaseServiceInfo {
 	onlyNodeLocalEndpoints := false
 	if apiservice.RequestsOnlyLocalTraffic(service) {
@@ -139,6 +148,7 @@ func (sct *ServiceChangeTracker) newBaseServiceInfo(port *v1.ServicePort, servic
 		sessionAffinityType:    service.Spec.SessionAffinity,
 		stickyMaxAgeSeconds:    stickyMaxAgeSeconds,
 		onlyNodeLocalEndpoints: onlyNodeLocalEndpoints,
+		egressIP:               net.ParseIP(service.Spec.EgressIP),
 	}
 
 	if sct.isIPv6Mode == nil {
@@ -307,6 +317,7 @@ func (sct *ServiceChangeTracker) serviceToServiceMap(service *v1.Service) Servic
 			serviceMap[svcPortName] = baseSvcInfo
 		}
 	}
+
 	return serviceMap
 }
 

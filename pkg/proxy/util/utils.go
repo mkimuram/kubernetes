@@ -116,10 +116,35 @@ func IsLocalIP(ip string) (bool, error) {
 	return false, nil
 }
 
+// GetInterfaceNameForIP returns interface name for a given IP address
+// returns "" if not found
+func GetInterfaceNameForIP(ip string) (string, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return "", err
+		}
+		for i := range addrs {
+			intf, _, err := net.ParseCIDR(addrs[i].String())
+			if err != nil {
+				return "", err
+			}
+			if net.ParseIP(ip).Equal(intf) {
+				return iface.Name, nil
+			}
+		}
+	}
+	return "", nil
+}
+
 // ShouldSkipService checks if a given service should skip proxying
 func ShouldSkipService(svcName types.NamespacedName, service *v1.Service) bool {
-	// if ClusterIP is "None" or empty, skip proxying
-	if !helper.IsServiceIPSet(service) {
+	// if ClusterIP is "None" or empty and serviceType is not Egress, skip proxying
+	if !helper.IsServiceIPSet(service) && service.Spec.Type != v1.ServiceTypeEgress {
 		klog.V(3).Infof("Skipping service %s due to clusterIP = %q", svcName, service.Spec.ClusterIP)
 		return true
 	}

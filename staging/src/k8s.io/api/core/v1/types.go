@@ -3752,6 +3752,9 @@ const (
 	// an external name that kubedns or equivalent will return as a CNAME
 	// record, with no exposing or proxying of any pods involved.
 	ServiceTypeExternalName ServiceType = "ExternalName"
+
+	// ServiceTypeEgress means a service will access to external via the EgressIP
+	ServiceTypeEgress ServiceType = "Egress"
 )
 
 // Service External Traffic Policy Type string
@@ -3909,6 +3912,11 @@ type ServiceSpec struct {
 	// sessionAffinityConfig contains the configurations of session affinity.
 	// +optional
 	SessionAffinityConfig *SessionAffinityConfig `json:"sessionAffinityConfig,omitempty" protobuf:"bytes,14,opt,name=sessionAffinityConfig"`
+
+	// EgressIP is the IP address of the egress.
+	// Only applies to types Egress. Ignored if other types.
+	// +optional
+	EgressIP string `json:"egressIP,omitempty" protobuf:"bytes,15,opt,name=egressIP"`
 }
 
 // ServicePort contains information on service's port.
@@ -3979,6 +3987,8 @@ const (
 	// ClusterIPNone - do not assign a cluster IP
 	// no proxying required and no environment variables should be created for pods
 	ClusterIPNone = "None"
+	// EgressIPNone - do not assign an egress IP
+	EgressIPNone = "None"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
