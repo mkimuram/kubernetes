@@ -311,7 +311,7 @@ func TestVolumeUnmountsFromForceDeletedPod(c clientset.Interface, f *framework.F
 	TestVolumeUnmountsFromDeletedPodWithForceOption(c, f, clientPod, true, false)
 }
 
-// TestVolumeUnmapsFromDeletedPod tests that a volume unmaps if the client pod was deleted while the kubelet was down.
+// TestVolumeUnmapsFromDeletedPodWithForceOption tests that a volume unmaps if the client pod was deleted while the kubelet was down.
 // forceDelete is true indicating whether the pod is forcefully deleted.
 func TestVolumeUnmapsFromDeletedPodWithForceOption(c clientset.Interface, f *framework.Framework, clientPod *v1.Pod, forceDelete bool) {
 	nodeIP, err := framework.GetHostAddress(c, clientPod)
@@ -321,7 +321,7 @@ func TestVolumeUnmapsFromDeletedPodWithForceOption(c clientset.Interface, f *fra
 	// Creating command to check whether path exists
 	command := fmt.Sprintf("ls /var/lib/kubelet/pods/%s/volumeDevices/*/ | grep '.'", clientPod.UID)
 	if isSudoPresent(nodeIP, framework.TestContext.Provider) {
-		command = fmt.Sprintf("sudo %s", command)
+		command = fmt.Sprintf("sudo sh -c \"%s\"", command)
 	}
 
 	ginkgo.By("Expecting the symlinks from PodDeviceMapPath to be found.")
