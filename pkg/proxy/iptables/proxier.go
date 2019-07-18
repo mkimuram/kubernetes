@@ -876,7 +876,6 @@ func (proxier *Proxier) syncProxyRules() {
 	}
 
 	// TODO: write egress nat rules and mangle rules, before kubernetes-specific postrouting rules below
-	routeID := "64"      // FIXME
 	routeIDMask := "255" // FIXME
 	for svcName, svc := range proxier.serviceMap {
 		svcInfo, ok := svc.(*serviceInfo)
@@ -893,10 +892,18 @@ func (proxier *Proxier) syncProxyRules() {
 			// No endpoints
 			continue
 		}
+		routeID, err := getRouteIDFromIP(svcInfo.EgressIP().String())
+		if err != nil {
+			klog.Errorf("Skip setting egress for %q due to error: %v", svcName.String(), err)
+			continue
+		}
 
 		primary, err := utilproxy.IsLocalIP(svcInfo.EgressIP().String())
-		klog.Errorf("primary: %v, error: %v", primary, err)
-		if err == nil && primary {
+		if err != nil {
+			klog.Errorf("Skip setting egress for %q due to error: %v", svcName.String(), err)
+			continue
+		}
+		if primary {
 			writeLine(proxier.natRules, []string{
 				"-A", string(kubeEgressPostroutingChain),
 				"-o", proxier.interfaceName,
@@ -980,8 +987,12 @@ func (proxier *Proxier) syncProxyRules() {
 			continue
 		}
 
-		// TODO: do error handling properly
-		primary, _ := utilproxy.IsLocalIP(svcInfo.EgressIP().String())
+		primary, err := utilproxy.IsLocalIP(svcInfo.EgressIP().String())
+		if err != nil {
+			klog.Errorf("Skip setting egress for %q due to error: %v", svcName.String(), err)
+			continue
+		}
+
 		var egressFWDChain utiliptables.Chain
 		var egressPreRoutingChain utiliptables.Chain
 		// TODO: Add per endpoint rules for egress
@@ -1033,6 +1044,12 @@ func (proxier *Proxier) syncProxyRules() {
 
 			// Generate the per-endpoint rules for egress.
 			// Forward chain
+			routeID, err := getRouteIDFromIP(svcInfo.EgressIP().String())
+			if err != nil {
+				klog.Errorf("Skip setting egress for %q due to error: %v", svcName.String(), err)
+				continue
+			}
+
 			if primary {
 				args = append(args[:0],
 					"-A", string(egressFWDChain),
@@ -1764,4 +1781,23 @@ func openLocalPort(lp *utilproxy.LocalPort) (utilproxy.Closeable, error) {
 	}
 	klog.V(2).Infof("Opened local port %s", lp.String())
 	return socket, nil
+}
+
+func getRouteIDFromIP(ip string) (string, error) {
+	// TODO: Implement this method properly
+	octets := strings.Split(ip, ".")
+	if len(octets) != 4 {
+		return "", fmt.Errorf("Failed to parse ip %q", ip)
+	}
+	routeID := octets[3]
+
+	routeIDVal, err := strconv.Atoi(routeID)
+	if err != nil {
+		return "", fmt.Errorf("Failed to convert RouteID %q to int value", routeID)
+	}
+	if routeIDVal < 1 || 255 < routeIDVal {
+		return "", fmt.Errorf("RouteID shouldn't be out of the range [1, 255], but was %q", routeIDVal)
+	}
+
+	return routeID, nil
 }
