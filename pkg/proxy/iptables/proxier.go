@@ -858,8 +858,8 @@ func (proxier *Proxier) syncProxyRules() {
 		}
 	}
 
-	// TODO: write egress mangle pre-routing rules
-	podSubnet := "10.32.0.0/12" //FIXME
+	// Write egress mangle pre-routing rules
+	podSubnet := "10.32.0.0/12" //FIXME  : consider this to be passed as configuration
 	writeLine(proxier.mangleRules, []string{
 		"-A", string(kubeEgressPreroutingChain),
 		"-m", "comment", "--comment", `"kubernetes egress skip pod subnet rule"`,
@@ -875,8 +875,17 @@ func (proxier *Proxier) syncProxyRules() {
 		}...)
 	}
 
-	// TODO: write egress nat rules and mangle rules, before kubernetes-specific postrouting rules below
-	routeIDMask := "255" // FIXME
+	// Accumulate Mangle chains to keep.
+	activeMangleChains := map[utiliptables.Chain]bool{} // use a map as a set
+
+	// To avoid growing this slice, we arbitrarily set its size to 64,
+	// there is never more than that many arguments for a single line.
+	// Note that even if we go over 64, it will still be correct - it
+	// is just for efficiency, not correctness.
+	args := make([]string, 64)
+
+	// Write egress nat rules and mangle rules, before kubernetes-specific postrouting rules below
+	routeIDMask := "255" // FIXME : consider this to be passed as configuration
 	for svcName, svc := range proxier.serviceMap {
 		svcInfo, ok := svc.(*serviceInfo)
 		if !ok {
@@ -892,6 +901,7 @@ func (proxier *Proxier) syncProxyRules() {
 			// No endpoints
 			continue
 		}
+
 		routeID, err := getRouteIDFromIP(svcInfo.EgressIP().String())
 		if err != nil {
 			klog.Errorf("Skip setting egress for %q due to error: %v", svcName.String(), err)
@@ -900,9 +910,13 @@ func (proxier *Proxier) syncProxyRules() {
 
 		primary, err := utilproxy.IsLocalIP(svcInfo.EgressIP().String())
 		if err != nil {
-			klog.Errorf("Skip setting egress for %q due to error: %v", svcName.String(), err)
-			continue
+			klog.Errorf("Fail to decide if this node is primary for egress %q, setting to secondary: %v", svcName.String(), err)
+			primary = false
 		}
+
+		var egressFWDChain utiliptables.Chain
+		var egressPreRoutingChain utiliptables.Chain
+		epInfo := endpointsInfo{}
 		if primary {
 			writeLine(proxier.natRules, []string{
 				"-A", string(kubeEgressPostroutingChain),
@@ -912,6 +926,18 @@ func (proxier *Proxier) syncProxyRules() {
 				"-j", "SNAT",
 				"--to", svcInfo.EgressIP().String(),
 			}...)
+			egressFWDChain = epInfo.egressFWDChain(svcName)
+			if chain, ok := existingMangleChains[utiliptables.Chain(egressFWDChain)]; ok {
+				writeBytesLine(proxier.mangleChains, chain)
+			} else {
+				writeLine(proxier.mangleChains, utiliptables.MakeChainLine(egressFWDChain))
+			}
+			writeLine(proxier.mangleRules,
+				"-A", string(kubeEgressFowardChain),
+				"-m", "comment", "--comment", svcName.String(),
+				"-j", string(egressFWDChain),
+			)
+			activeMangleChains[egressFWDChain] = true
 		} else {
 			writeLine(proxier.natRules, []string{
 				"-A", string(kubeEgressPostroutingChain),
@@ -919,6 +945,46 @@ func (proxier *Proxier) syncProxyRules() {
 				"-m", "mark", "--mark", fmt.Sprintf("%v/%v", routeID, routeIDMask),
 				"-j", "ACCEPT",
 			}...)
+		}
+		// PreRouting chain
+		egressPreRoutingChain = epInfo.egressPreRoutingChain(svcName)
+		if chain, ok := existingMangleChains[utiliptables.Chain(egressPreRoutingChain)]; ok {
+			writeBytesLine(proxier.mangleChains, chain)
+		} else {
+			writeLine(proxier.mangleChains, utiliptables.MakeChainLine(egressPreRoutingChain))
+		}
+		writeLine(proxier.mangleRules,
+			"-A", string(kubeEgressPreroutingChain),
+			"-m", "comment", "--comment", svcName.String(),
+			"-j", string(egressPreRoutingChain),
+		)
+		activeMangleChains[egressPreRoutingChain] = true
+
+		for _, ep := range proxier.endpointsMap[svcName] {
+			epInfo, ok := ep.(*endpointsInfo)
+			if !ok {
+				klog.Errorf("Failed to cast endpointsInfo %q", ep.String())
+				continue
+			}
+
+			if primary {
+				args = append(args[:0],
+					"-A", string(egressFWDChain),
+					"-s", epInfo.IP(),
+					"-o", proxier.interfaceName,
+					"-i", proxier.interfaceName,
+					"-j", "MARK", "--set-mark", routeID,
+				)
+				writeLine(proxier.mangleRules, args...)
+			}
+
+			// PreRouting chain
+			args = append(args[:0],
+				"-A", string(egressPreRoutingChain),
+				"-s", epInfo.IP(),
+				"-j", "MARK", "--set-mark", routeID,
+			)
+			writeLine(proxier.mangleRules, args...)
 		}
 	}
 
@@ -943,9 +1009,6 @@ func (proxier *Proxier) syncProxyRules() {
 	// Accumulate NAT chains to keep.
 	activeNATChains := map[utiliptables.Chain]bool{} // use a map as a set
 
-	// Accumulate Mangle chains to keep.
-	activeMangleChains := map[utiliptables.Chain]bool{} // use a map as a set
-
 	// Accumulate the set of local ports that we will be holding open once this update is complete
 	replacementPortsMap := map[utilproxy.LocalPort]utilproxy.Closeable{}
 
@@ -957,118 +1020,11 @@ func (proxier *Proxier) syncProxyRules() {
 	//   slice = append(slice[:0], ...)
 	endpoints := make([]*endpointsInfo, 0)
 	endpointChains := make([]utiliptables.Chain, 0)
-	// To avoid growing this slice, we arbitrarily set its size to 64,
-	// there is never more than that many arguments for a single line.
-	// Note that even if we go over 64, it will still be correct - it
-	// is just for efficiency, not correctness.
-	args := make([]string, 64)
 
 	// Compute total number of endpoint chains across all services.
 	proxier.endpointChainsNumber = 0
 	for svcName := range proxier.serviceMap {
 		proxier.endpointChainsNumber += len(proxier.endpointsMap[svcName])
-	}
-
-	// Build egress rules for each service.
-	for svcName, svc := range proxier.serviceMap {
-		svcInfo, ok := svc.(*serviceInfo)
-		if !ok {
-			klog.Errorf("Failed to cast serviceInfo %q", svcName.String())
-			continue
-		}
-
-		// Skip if EgressIP is not set
-		if svcInfo.EgressIP() == nil {
-			continue
-		}
-		hasEndpoints := len(proxier.endpointsMap[svcName]) > 0
-
-		if !hasEndpoints {
-			continue
-		}
-
-		primary, err := utilproxy.IsLocalIP(svcInfo.EgressIP().String())
-		if err != nil {
-			klog.Errorf("Skip setting egress for %q due to error: %v", svcName.String(), err)
-			continue
-		}
-
-		var egressFWDChain utiliptables.Chain
-		var egressPreRoutingChain utiliptables.Chain
-		// TODO: Add per endpoint rules for egress
-		for i, ep := range proxier.endpointsMap[svcName] {
-			epInfo, ok := ep.(*endpointsInfo)
-			if !ok {
-				klog.Errorf("Failed to cast endpointsInfo %q", ep.String())
-				continue
-			}
-
-			if len(svcInfo.EgressIP()) == 0 {
-				continue
-			}
-
-			// Generate the per-service chains for egress.
-			if i == 0 {
-				// Forward chain
-				if primary {
-					egressFWDChain = epInfo.egressFWDChain(svcName)
-					// Create the endpoint chain, retaining counters if possible.
-					if chain, ok := existingMangleChains[utiliptables.Chain(egressFWDChain)]; ok {
-						writeBytesLine(proxier.mangleChains, chain)
-					} else {
-						writeLine(proxier.mangleChains, utiliptables.MakeChainLine(egressFWDChain))
-					}
-					writeLine(proxier.mangleRules,
-						"-A", string(kubeEgressFowardChain),
-						"-m", "comment", "--comment", svcName.String(),
-						"-j", string(egressFWDChain),
-					)
-					activeMangleChains[egressFWDChain] = true
-				}
-
-				// PreRouting chain
-				egressPreRoutingChain = epInfo.egressPreRoutingChain(svcName)
-				// Create the endpoint chain, retaining counters if possible.
-				if chain, ok := existingMangleChains[utiliptables.Chain(egressPreRoutingChain)]; ok {
-					writeBytesLine(proxier.mangleChains, chain)
-				} else {
-					writeLine(proxier.mangleChains, utiliptables.MakeChainLine(egressPreRoutingChain))
-				}
-				writeLine(proxier.mangleRules,
-					"-A", string(kubeEgressPreroutingChain),
-					"-m", "comment", "--comment", svcName.String(),
-					"-j", string(egressPreRoutingChain),
-				)
-				activeMangleChains[egressPreRoutingChain] = true
-			}
-
-			// Generate the per-endpoint rules for egress.
-			// Forward chain
-			routeID, err := getRouteIDFromIP(svcInfo.EgressIP().String())
-			if err != nil {
-				klog.Errorf("Skip setting egress for %q due to error: %v", svcName.String(), err)
-				continue
-			}
-
-			if primary {
-				args = append(args[:0],
-					"-A", string(egressFWDChain),
-					"-s", epInfo.IP(),
-					"-o", proxier.interfaceName,
-					"-i", proxier.interfaceName,
-					"-j", "MARK", "--set-mark", routeID,
-				)
-				writeLine(proxier.mangleRules, args...)
-			}
-
-			// PreRouting chain
-			args = append(args[:0],
-				"-A", string(egressPreRoutingChain),
-				"-s", epInfo.IP(),
-				"-j", "MARK", "--set-mark", routeID,
-			)
-			writeLine(proxier.mangleRules, args...)
-		}
 	}
 
 	// Build rules for each service.
