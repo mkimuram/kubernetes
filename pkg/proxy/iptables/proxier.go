@@ -26,6 +26,9 @@ import (
 	"encoding/base32"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -938,6 +941,10 @@ func (proxier *Proxier) syncProxyRules() {
 				"-j", string(egressFWDChain),
 			)
 			activeMangleChains[egressFWDChain] = true
+
+			if err := proxier.deleteRoute(routeID); err != nil {
+				klog.Errorf("Failed to delete route %q for %q: %v", routeID, svcInfo.EgressIP().String(), err)
+			}
 		} else {
 			writeLine(proxier.natRules, []string{
 				"-A", string(kubeEgressPostroutingChain),
@@ -945,6 +952,10 @@ func (proxier *Proxier) syncProxyRules() {
 				"-m", "mark", "--mark", fmt.Sprintf("%v/%v", routeID, routeIDMask),
 				"-j", "ACCEPT",
 			}...)
+
+			if err := proxier.addRoute(routeID, svcInfo.EgressIP().String()); err != nil {
+				klog.Errorf("Failed to add route %q for %q: %v", routeID, svcInfo.EgressIP().String(), err)
+			}
 		}
 		// PreRouting chain
 		egressPreRoutingChain = epInfo.egressPreRoutingChain(svcName)
@@ -1740,7 +1751,7 @@ func openLocalPort(lp *utilproxy.LocalPort) (utilproxy.Closeable, error) {
 }
 
 func getRouteIDFromIP(ip string) (string, error) {
-	// TODO: Implement this method properly
+	// TODO: FIXME: Implement this method properly (This implementation only allows one class C network.)
 	octets := strings.Split(ip, ".")
 	if len(octets) != 4 {
 		return "", fmt.Errorf("Failed to parse ip %q", ip)
@@ -1756,4 +1767,81 @@ func getRouteIDFromIP(ip string) (string, error) {
 	}
 
 	return routeID, nil
+}
+
+const routeDir = "/etc/iproute2/rt_tables.d/"
+const routeTablePrefix = "egress"
+const routeConfSuffix = ".conf"
+
+func (proxier *Proxier) deleteRoute(routeID string) error {
+	routeTable := routeTablePrefix + routeID
+
+	routeShowArgs := []string{"route", "show", "table", routeID}
+	tableOut, tableErr := proxier.exec.Command("ip", routeShowArgs...).Output()
+	if tableErr != nil {
+		return fmt.Errorf("ip command:%v returned error: %v", routeShowArgs, tableErr)
+	}
+
+	if len(string(tableOut)) != 0 {
+		delArgs := []string{"rule", "del", "table", routeTable}
+		if err := proxier.exec.Command("ip", delArgs...).Run(); err != nil {
+			return fmt.Errorf("ip command:%v returned error: %v", delArgs, err)
+		}
+
+		flushArgs := []string{"route", "flush", "table", routeTable}
+		if err := proxier.exec.Command("ip", flushArgs...).Run(); err != nil {
+			return fmt.Errorf("ip command:%v returned error: %v", flushArgs, err)
+		}
+	}
+
+	conf := filepath.Join(routeDir, routeTable+routeConfSuffix)
+	if err := os.Remove(conf); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (proxier *Proxier) addRoute(routeID string, ip string) error {
+	routeTable := routeTablePrefix + routeID
+
+	conf := filepath.Join(routeDir, routeTable+routeConfSuffix)
+	file, err := os.Create(conf)
+	if err != nil {
+		return err
+	}
+
+	_, err = file.WriteString(fmt.Sprintf("%s %s\n", routeID, routeTable))
+	if err != nil {
+		file.Close()
+		return err
+	}
+	file.Close()
+
+	routeShowArgs := []string{"route", "show", "table", routeID}
+	tableOut, tableErr := proxier.exec.Command("ip", routeShowArgs...).Output()
+	if tableErr != nil {
+		return fmt.Errorf("ip command:%v returned error: %v", routeShowArgs, tableErr)
+	}
+
+	if !strings.Contains(string(tableOut), fmt.Sprintf("default via %s dev %s", ip, proxier.interfaceName)) {
+		addRouteArgs := []string{"route", "add", "default", "via", ip, "dev", proxier.interfaceName, "table", routeTable}
+		if err := proxier.exec.Command("ip", addRouteArgs...).Run(); err != nil {
+			return fmt.Errorf("ip command:%v returned error: %v", addRouteArgs, err)
+		}
+	}
+
+	ruleShowArgs := []string{"rule", "show"}
+	ruleOut, ruleErr := proxier.exec.Command("ip", ruleShowArgs...).Output()
+	if ruleErr != nil {
+		return fmt.Errorf("ip command:%v returned error: %v", ruleShowArgs, ruleErr)
+	}
+	if match, err := regexp.Match(fmt.Sprintf("^%s:", routeID), ruleOut); err != nil || !match {
+		ruleAddArgs := []string{"rule", "add", "fwmark", routeID, "table", routeTable}
+		if err := proxier.exec.Command("ip", ruleAddArgs...).Run(); err != nil {
+			return fmt.Errorf("ip command:%v returned error: %v", ruleAddArgs, err)
+		}
+	}
+
+	return nil
 }
