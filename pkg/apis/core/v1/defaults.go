@@ -128,6 +128,15 @@ func SetDefaults_Service(obj *v1.Service) {
 		obj.Spec.ExternalTrafficPolicy == "" {
 		obj.Spec.ExternalTrafficPolicy = v1.ServiceExternalTrafficPolicyTypeCluster
 	}
+
+	if obj.Spec.Type == v1.ServiceTypeEgress {
+		obj.Spec.ClusterIP = v1.ClusterIPNone
+		if obj.Spec.EgressIP == "" {
+			obj.Spec.EgressIP = v1.EgressIPNone
+		}
+	} else {
+		obj.Spec.EgressIP = v1.EgressIPNone
+	}
 }
 func SetDefaults_Pod(obj *v1.Pod) {
 	// If limits are specified, but requests are not, default requests to limits

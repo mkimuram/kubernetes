@@ -3899,7 +3899,7 @@ func ValidatePodTemplateUpdate(newPod, oldPod *core.PodTemplate) field.ErrorList
 
 var supportedSessionAffinityType = sets.NewString(string(core.ServiceAffinityClientIP), string(core.ServiceAffinityNone))
 var supportedServiceType = sets.NewString(string(core.ServiceTypeClusterIP), string(core.ServiceTypeNodePort),
-	string(core.ServiceTypeLoadBalancer), string(core.ServiceTypeExternalName))
+	string(core.ServiceTypeLoadBalancer), string(core.ServiceTypeExternalName), string(core.ServiceTypeEgress))
 
 // ValidateService tests if required fields/annotations of a Service are valid.
 func ValidateService(service *core.Service) field.ErrorList {
@@ -3907,7 +3907,7 @@ func ValidateService(service *core.Service) field.ErrorList {
 
 	specPath := field.NewPath("spec")
 	isHeadlessService := service.Spec.ClusterIP == core.ClusterIPNone
-	if len(service.Spec.Ports) == 0 && !isHeadlessService && service.Spec.Type != core.ServiceTypeExternalName {
+	if len(service.Spec.Ports) == 0 && !isHeadlessService && service.Spec.Type != core.ServiceTypeExternalName && service.Spec.Type != core.ServiceTypeEgress {
 		allErrs = append(allErrs, field.Required(specPath.Child("ports"), ""))
 	}
 	switch service.Spec.Type {
@@ -3940,6 +3940,10 @@ func ValidateService(service *core.Service) field.ErrorList {
 			allErrs = append(allErrs, ValidateDNS1123Subdomain(cname, specPath.Child("externalName"))...)
 		} else {
 			allErrs = append(allErrs, field.Required(specPath.Child("externalName"), ""))
+		}
+	case core.ServiceTypeEgress:
+		if service.Spec.EgressIP == "None" {
+			allErrs = append(allErrs, field.Forbidden(specPath.Child("egressIP"), "may not be set to 'None' for Egress services"))
 		}
 	}
 
