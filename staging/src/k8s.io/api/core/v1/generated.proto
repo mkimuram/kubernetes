@@ -4667,6 +4667,11 @@ message ServiceSpec {
   // sessionAffinityConfig contains the configurations of session affinity.
   // +optional
   optional SessionAffinityConfig sessionAffinityConfig = 14;
+
+  // EgressIP is the IP address of the egress.
+  // Only applies to types Egress. Ignored if other types.
+  // +optional
+  optional string egressIP = 15;
 }
 
 // ServiceStatus represents the current status of a service.
