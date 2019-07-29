@@ -26,6 +26,9 @@ import (
 	"encoding/base32"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,6 +76,9 @@ const (
 	// the kubernetes postrouting chain
 	kubePostroutingChain utiliptables.Chain = "KUBE-POSTROUTING"
 
+	// the kubernetes postrouting chain
+	kubeEgressPostroutingChain utiliptables.Chain = "KUBE-EGRESS-POST"
+
 	// KubeMarkMasqChain is the mark-for-masquerade chain
 	KubeMarkMasqChain utiliptables.Chain = "KUBE-MARK-MASQ"
 
@@ -81,6 +87,12 @@ const (
 
 	// the kubernetes forward chain
 	kubeForwardChain utiliptables.Chain = "KUBE-FORWARD"
+
+	// the kubernetes egress prerouting chain
+	kubeEgressPreroutingChain utiliptables.Chain = "KUBE-EGRESS-PRE"
+
+	// the kubernetes egress forward chain
+	kubeEgressFowardChain utiliptables.Chain = "KUBE-EGRESS-FWD"
 )
 
 // Versioner can query the current iptables version.
@@ -202,6 +214,20 @@ func (e *endpointsInfo) endpointChain(svcNameString, protocol string) utiliptabl
 	return e.chainName
 }
 
+// Returns the egress forward chain name for a given endpointsInfo.
+func (e *endpointsInfo) egressFWDChain(svcName proxy.ServicePortName) utiliptables.Chain {
+	hash := sha256.Sum256([]byte(svcName.String()))
+	encoded := base32.StdEncoding.EncodeToString(hash[:])
+	return utiliptables.Chain("KUBE-EG-FWD-" + encoded[:16])
+}
+
+// Returns the egress prerouting chain name for a given endpointsInfo.
+func (e *endpointsInfo) egressPreRoutingChain(svcName proxy.ServicePortName) utiliptables.Chain {
+	hash := sha256.Sum256([]byte(svcName.String()))
+	encoded := base32.StdEncoding.EncodeToString(hash[:])
+	return utiliptables.Chain("KUBE-EG-PRE-" + encoded[:16])
+}
+
 // Proxier is an iptables based proxy for connections between a localhost:lport
 // and services that provide the actual backends.
 type Proxier struct {
@@ -232,6 +258,7 @@ type Proxier struct {
 	clusterCIDR    string
 	hostname       string
 	nodeIP         net.IP
+	interfaceName  string
 	portMapper     utilproxy.PortOpener
 	recorder       record.EventRecorder
 	healthChecker  healthcheck.Server
@@ -246,10 +273,13 @@ type Proxier struct {
 	// that are significantly impacting performance.
 	iptablesData             *bytes.Buffer
 	existingFilterChainsData *bytes.Buffer
+	existingMangleChainsData *bytes.Buffer
 	filterChains             *bytes.Buffer
 	filterRules              *bytes.Buffer
 	natChains                *bytes.Buffer
 	natRules                 *bytes.Buffer
+	mangleChains             *bytes.Buffer
+	mangleRules              *bytes.Buffer
 
 	// endpointChainsNumber is the total amount of endpointChains across all
 	// services that we will generate (it is computed at the beginning of
@@ -316,6 +346,15 @@ func NewProxier(ipt utiliptables.Interface,
 		klog.Warning("invalid nodeIP, initializing kube-proxy with 127.0.0.1 as nodeIP")
 		nodeIP = net.ParseIP("127.0.0.1")
 	}
+	interfaceName, err := utilproxy.GetInterfaceNameForIP(nodeIP.String())
+	if err != nil {
+		klog.Warningf("Failed to get interface for nodeIP with error: %v", err)
+		interfaceName = "lo"
+	}
+	if interfaceName == "" {
+		klog.Warning("Failed to get interface for nodeIP")
+		interfaceName = "lo"
+	}
 
 	if len(clusterCIDR) == 0 {
 		klog.Warning("clusterCIDR not specified, unable to distinguish between internal and external traffic")
@@ -339,6 +378,7 @@ func NewProxier(ipt utiliptables.Interface,
 		clusterCIDR:              clusterCIDR,
 		hostname:                 hostname,
 		nodeIP:                   nodeIP,
+		interfaceName:            interfaceName,
 		portMapper:               &listenPortOpener{},
 		recorder:                 recorder,
 		healthChecker:            healthChecker,
@@ -346,10 +386,13 @@ func NewProxier(ipt utiliptables.Interface,
 		precomputedProbabilities: make([]string, 0, 1001),
 		iptablesData:             bytes.NewBuffer(nil),
 		existingFilterChainsData: bytes.NewBuffer(nil),
+		existingMangleChainsData: bytes.NewBuffer(nil),
 		filterChains:             bytes.NewBuffer(nil),
 		filterRules:              bytes.NewBuffer(nil),
 		natChains:                bytes.NewBuffer(nil),
 		natRules:                 bytes.NewBuffer(nil),
+		mangleChains:             bytes.NewBuffer(nil),
+		mangleRules:              bytes.NewBuffer(nil),
 		nodePortAddresses:        nodePortAddresses,
 		networkInterfacer:        utilproxy.RealNetwork{},
 	}
@@ -375,7 +418,10 @@ var iptablesJumpChains = []iptablesJumpChain{
 	{utiliptables.TableFilter, kubeForwardChain, utiliptables.ChainForward, "kubernetes forwarding rules", nil},
 	{utiliptables.TableNAT, kubeServicesChain, utiliptables.ChainOutput, "kubernetes service portals", nil},
 	{utiliptables.TableNAT, kubeServicesChain, utiliptables.ChainPrerouting, "kubernetes service portals", nil},
+	{utiliptables.TableNAT, kubeEgressPostroutingChain, utiliptables.ChainPostrouting, "kubernetes egress postrouting rules", nil},
 	{utiliptables.TableNAT, kubePostroutingChain, utiliptables.ChainPostrouting, "kubernetes postrouting rules", nil},
+	{utiliptables.TableMangle, kubeEgressPreroutingChain, utiliptables.ChainPrerouting, "kubernetes egress prerouting rules", nil},
+	{utiliptables.TableMangle, kubeEgressFowardChain, utiliptables.ChainForward, "kubernetes egress forward rules", nil},
 }
 
 var iptablesCleanupOnlyChains = []iptablesJumpChain{}
@@ -458,6 +504,33 @@ func CleanupLeftovers(ipt utiliptables.Interface) (encounteredError bool) {
 			encounteredError = true
 		}
 	}
+
+	// Flush and remove all of our "-t mangle" chains.
+	iptablesData.Reset()
+	if err := ipt.SaveInto(utiliptables.TableMangle, iptablesData); err != nil {
+		klog.Errorf("Failed to execute iptables-save for %s: %v", utiliptables.TableMangle, err)
+		encounteredError = true
+	} else {
+		existingMangleChains := utiliptables.GetChainLines(utiliptables.TableMangle, iptablesData.Bytes())
+		mangleChains := bytes.NewBuffer(nil)
+		mangleRules := bytes.NewBuffer(nil)
+		writeLine(mangleChains, "*mangle")
+		for _, chain := range []utiliptables.Chain{kubeEgressPreroutingChain, kubeEgressFowardChain} {
+			if _, found := existingMangleChains[chain]; found {
+				chainString := string(chain)
+				writeBytesLine(mangleChains, existingMangleChains[chain])
+				writeLine(mangleRules, "-X", chainString)
+			}
+		}
+		writeLine(mangleRules, "COMMIT")
+		mangleLines := append(mangleChains.Bytes(), mangleRules.Bytes()...)
+		// Write it.
+		if err := ipt.Restore(utiliptables.TableMangle, mangleLines, utiliptables.NoFlushTables, utiliptables.RestoreCounters); err != nil {
+			klog.Errorf("Failed to execute iptables-restore for %s: %v", utiliptables.TableMangle, err)
+			encounteredError = true
+		}
+	}
+
 	return encounteredError
 }
 
@@ -731,6 +804,15 @@ func (proxier *Proxier) syncProxyRules() {
 		existingFilterChains = utiliptables.GetChainLines(utiliptables.TableFilter, proxier.existingFilterChainsData.Bytes())
 	}
 
+	existingMangleChains := make(map[utiliptables.Chain][]byte)
+	proxier.existingMangleChainsData.Reset()
+	err = proxier.iptables.SaveInto(utiliptables.TableMangle, proxier.existingMangleChainsData)
+	if err != nil { // if we failed to get any rules
+		klog.Errorf("Failed to execute iptables-save, syncing all rules: %v", err)
+	} else { // otherwise parse the output
+		existingMangleChains = utiliptables.GetChainLines(utiliptables.TableMangle, proxier.existingMangleChainsData.Bytes())
+	}
+
 	// IMPORTANT: existingNATChains may share memory with proxier.iptablesData.
 	existingNATChains := make(map[utiliptables.Chain][]byte)
 	proxier.iptablesData.Reset()
@@ -747,10 +829,13 @@ func (proxier *Proxier) syncProxyRules() {
 	proxier.filterRules.Reset()
 	proxier.natChains.Reset()
 	proxier.natRules.Reset()
+	proxier.mangleChains.Reset()
+	proxier.mangleRules.Reset()
 
 	// Write table headers.
 	writeLine(proxier.filterChains, "*filter")
 	writeLine(proxier.natChains, "*nat")
+	writeLine(proxier.mangleChains, "*mangle")
 
 	// Make sure we keep stats for the top-level chains, if they existed
 	// (which most should have because we created them above).
@@ -761,11 +846,156 @@ func (proxier *Proxier) syncProxyRules() {
 			writeLine(proxier.filterChains, utiliptables.MakeChainLine(chainName))
 		}
 	}
-	for _, chainName := range []utiliptables.Chain{kubeServicesChain, kubeNodePortsChain, kubePostroutingChain, KubeMarkMasqChain} {
+	for _, chainName := range []utiliptables.Chain{kubeEgressPreroutingChain, kubeEgressFowardChain} {
+		if chain, ok := existingMangleChains[chainName]; ok {
+			writeBytesLine(proxier.mangleChains, chain)
+		} else {
+			writeLine(proxier.mangleChains, utiliptables.MakeChainLine(chainName))
+		}
+	}
+	for _, chainName := range []utiliptables.Chain{kubeServicesChain, kubeNodePortsChain, kubeEgressPostroutingChain, kubePostroutingChain, KubeMarkMasqChain} {
 		if chain, ok := existingNATChains[chainName]; ok {
 			writeBytesLine(proxier.natChains, chain)
 		} else {
 			writeLine(proxier.natChains, utiliptables.MakeChainLine(chainName))
+		}
+	}
+
+	// Write egress mangle pre-routing rules
+	podSubnet := "10.32.0.0/12" //FIXME  : consider this to be passed as configuration
+	writeLine(proxier.mangleRules, []string{
+		"-A", string(kubeEgressPreroutingChain),
+		"-m", "comment", "--comment", `"kubernetes egress skip pod subnet rule"`,
+		"-d", podSubnet,
+		"-j", "RETURN",
+	}...)
+	if len(proxier.clusterCIDR) > 0 {
+		writeLine(proxier.mangleRules, []string{
+			"-A", string(kubeEgressPreroutingChain),
+			"-m", "comment", "--comment", `"kubernetes egress skip service subnet rule"`,
+			"-d", proxier.clusterCIDR,
+			"-j", "RETURN",
+		}...)
+	}
+
+	// Accumulate Mangle chains to keep.
+	activeMangleChains := map[utiliptables.Chain]bool{} // use a map as a set
+
+	// To avoid growing this slice, we arbitrarily set its size to 64,
+	// there is never more than that many arguments for a single line.
+	// Note that even if we go over 64, it will still be correct - it
+	// is just for efficiency, not correctness.
+	args := make([]string, 64)
+
+	// Write egress nat rules and mangle rules, before kubernetes-specific postrouting rules below
+	routeIDMask := "255" // FIXME : consider this to be passed as configuration
+	for svcName, svc := range proxier.serviceMap {
+		svcInfo, ok := svc.(*serviceInfo)
+		if !ok {
+			klog.Errorf("Failed to cast serviceInfo %q", svcName.String())
+			continue
+		}
+
+		if len(svcInfo.EgressIP()) == 0 {
+			// Not an egress
+			continue
+		}
+		if len(proxier.endpointsMap[svcName]) == 0 {
+			// No endpoints
+			continue
+		}
+
+		routeID, err := getRouteIDFromIP(svcInfo.EgressIP().String())
+		if err != nil {
+			klog.Errorf("Skip setting egress for %q due to error: %v", svcName.String(), err)
+			continue
+		}
+
+		primary, err := utilproxy.IsLocalIP(svcInfo.EgressIP().String())
+		if err != nil {
+			klog.Errorf("Fail to decide if this node is primary for egress %q, setting to secondary: %v", svcName.String(), err)
+			primary = false
+		}
+
+		var egressFWDChain utiliptables.Chain
+		var egressPreRoutingChain utiliptables.Chain
+		epInfo := endpointsInfo{}
+		if primary {
+			writeLine(proxier.natRules, []string{
+				"-A", string(kubeEgressPostroutingChain),
+				"-o", proxier.interfaceName,
+				"-m", "comment", "--comment", fmt.Sprintf(`"SNAT to %s to handle egress for packets with %s/%s mark"`, svcInfo.EgressIP().String(), routeID, routeIDMask),
+				"-m", "mark", "--mark", fmt.Sprintf("%s/%s", routeID, routeIDMask),
+				"-j", "SNAT",
+				"--to", svcInfo.EgressIP().String(),
+			}...)
+			egressFWDChain = epInfo.egressFWDChain(svcName)
+			if chain, ok := existingMangleChains[utiliptables.Chain(egressFWDChain)]; ok {
+				writeBytesLine(proxier.mangleChains, chain)
+			} else {
+				writeLine(proxier.mangleChains, utiliptables.MakeChainLine(egressFWDChain))
+			}
+			writeLine(proxier.mangleRules,
+				"-A", string(kubeEgressFowardChain),
+				"-m", "comment", "--comment", svcName.String(),
+				"-j", string(egressFWDChain),
+			)
+			activeMangleChains[egressFWDChain] = true
+
+			if err := proxier.deleteRoute(routeID); err != nil {
+				klog.Errorf("Failed to delete route %q for %q: %v", routeID, svcInfo.EgressIP().String(), err)
+			}
+		} else {
+			writeLine(proxier.natRules, []string{
+				"-A", string(kubeEgressPostroutingChain),
+				"-m", "comment", "--comment", fmt.Sprintf(`"Skip kubernetes default SNAT rules to handle egress for packets with %s/%s mark"`, routeID, routeIDMask),
+				"-m", "mark", "--mark", fmt.Sprintf("%v/%v", routeID, routeIDMask),
+				"-j", "ACCEPT",
+			}...)
+
+			if err := proxier.addRoute(routeID, svcInfo.EgressIP().String()); err != nil {
+				klog.Errorf("Failed to add route %q for %q: %v", routeID, svcInfo.EgressIP().String(), err)
+			}
+		}
+		// PreRouting chain
+		egressPreRoutingChain = epInfo.egressPreRoutingChain(svcName)
+		if chain, ok := existingMangleChains[utiliptables.Chain(egressPreRoutingChain)]; ok {
+			writeBytesLine(proxier.mangleChains, chain)
+		} else {
+			writeLine(proxier.mangleChains, utiliptables.MakeChainLine(egressPreRoutingChain))
+		}
+		writeLine(proxier.mangleRules,
+			"-A", string(kubeEgressPreroutingChain),
+			"-m", "comment", "--comment", svcName.String(),
+			"-j", string(egressPreRoutingChain),
+		)
+		activeMangleChains[egressPreRoutingChain] = true
+
+		for _, ep := range proxier.endpointsMap[svcName] {
+			epInfo, ok := ep.(*endpointsInfo)
+			if !ok {
+				klog.Errorf("Failed to cast endpointsInfo %q", ep.String())
+				continue
+			}
+
+			if primary {
+				args = append(args[:0],
+					"-A", string(egressFWDChain),
+					"-s", epInfo.IP(),
+					"-o", proxier.interfaceName,
+					"-i", proxier.interfaceName,
+					"-j", "MARK", "--set-mark", routeID,
+				)
+				writeLine(proxier.mangleRules, args...)
+			}
+
+			// PreRouting chain
+			args = append(args[:0],
+				"-A", string(egressPreRoutingChain),
+				"-s", epInfo.IP(),
+				"-j", "MARK", "--set-mark", routeID,
+			)
+			writeLine(proxier.mangleRules, args...)
 		}
 	}
 
@@ -801,11 +1031,6 @@ func (proxier *Proxier) syncProxyRules() {
 	//   slice = append(slice[:0], ...)
 	endpoints := make([]*endpointsInfo, 0)
 	endpointChains := make([]utiliptables.Chain, 0)
-	// To avoid growing this slice, we arbitrarily set its size to 64,
-	// there is never more than that many arguments for a single line.
-	// Note that even if we go over 64, it will still be correct - it
-	// is just for efficiency, not correctness.
-	args := make([]string, 64)
 
 	// Compute total number of endpoint chains across all services.
 	proxier.endpointChainsNumber = 0
@@ -818,6 +1043,10 @@ func (proxier *Proxier) syncProxyRules() {
 		svcInfo, ok := svc.(*serviceInfo)
 		if !ok {
 			klog.Errorf("Failed to cast serviceInfo %q", svcName.String())
+			continue
+		}
+		// Skip if ClusterIP is not set
+		if svcInfo.ClusterIP() == nil {
 			continue
 		}
 		isIPv6 := utilnet.IsIPv6(svcInfo.ClusterIP())
@@ -1291,7 +1520,7 @@ func (proxier *Proxier) syncProxyRules() {
 		}
 	}
 
-	// Delete chains no longer in use.
+	// Delete nat chains no longer in use.
 	for chain := range existingNATChains {
 		if !activeNATChains[chain] {
 			chainString := string(chain)
@@ -1304,6 +1533,22 @@ func (proxier *Proxier) syncProxyRules() {
 			// chain.
 			writeBytesLine(proxier.natChains, existingNATChains[chain])
 			writeLine(proxier.natRules, "-X", chainString)
+		}
+	}
+
+	// Delete mangle chains no longer in use
+	for chain := range existingMangleChains {
+		if !activeMangleChains[chain] {
+			chainString := string(chain)
+			if !strings.HasPrefix(chainString, "KUBE-EG-PRE-") && !strings.HasPrefix(chainString, "KUBE-EG-FWD-") {
+				// Ignore chains that aren't ours.
+				continue
+			}
+			// We must (as per iptables) write a chain-line for it, which has
+			// the nice effect of flushing the chain.  Then we can remove the
+			// chain.
+			writeBytesLine(proxier.mangleChains, existingMangleChains[chain])
+			writeLine(proxier.mangleRules, "-X", chainString)
 		}
 	}
 
@@ -1388,6 +1633,7 @@ func (proxier *Proxier) syncProxyRules() {
 	// Write the end-of-table markers.
 	writeLine(proxier.filterRules, "COMMIT")
 	writeLine(proxier.natRules, "COMMIT")
+	writeLine(proxier.mangleRules, "COMMIT")
 
 	// Sync rules.
 	// NOTE: NoFlushTables is used so we don't flush non-kubernetes chains in the table
@@ -1396,6 +1642,8 @@ func (proxier *Proxier) syncProxyRules() {
 	proxier.iptablesData.Write(proxier.filterRules.Bytes())
 	proxier.iptablesData.Write(proxier.natChains.Bytes())
 	proxier.iptablesData.Write(proxier.natRules.Bytes())
+	proxier.iptablesData.Write(proxier.mangleChains.Bytes())
+	proxier.iptablesData.Write(proxier.mangleRules.Bytes())
 
 	klog.V(5).Infof("Restoring iptables rules: %s", proxier.iptablesData.Bytes())
 	err = proxier.iptables.RestoreAll(proxier.iptablesData.Bytes(), utiliptables.NoFlushTables, utiliptables.RestoreCounters)
@@ -1500,4 +1748,100 @@ func openLocalPort(lp *utilproxy.LocalPort) (utilproxy.Closeable, error) {
 	}
 	klog.V(2).Infof("Opened local port %s", lp.String())
 	return socket, nil
+}
+
+func getRouteIDFromIP(ip string) (string, error) {
+	// TODO: FIXME: Implement this method properly (This implementation only allows one class C network.)
+	octets := strings.Split(ip, ".")
+	if len(octets) != 4 {
+		return "", fmt.Errorf("Failed to parse ip %q", ip)
+	}
+	routeID := octets[3]
+
+	routeIDVal, err := strconv.Atoi(routeID)
+	if err != nil {
+		return "", fmt.Errorf("Failed to convert RouteID %q to int value", routeID)
+	}
+	if routeIDVal < 1 || 255 < routeIDVal {
+		return "", fmt.Errorf("RouteID shouldn't be out of the range [1, 255], but was %q", routeIDVal)
+	}
+
+	return routeID, nil
+}
+
+const routeDir = "/etc/iproute2/rt_tables.d/"
+const routeTablePrefix = "egress"
+const routeConfSuffix = ".conf"
+
+func (proxier *Proxier) deleteRoute(routeID string) error {
+	routeTable := routeTablePrefix + routeID
+
+	routeShowArgs := []string{"route", "show", "table", routeID}
+	tableOut, tableErr := proxier.exec.Command("ip", routeShowArgs...).Output()
+	if tableErr != nil {
+		return fmt.Errorf("ip command:%v returned error: %v", routeShowArgs, tableErr)
+	}
+
+	if len(string(tableOut)) != 0 {
+		delArgs := []string{"rule", "del", "table", routeTable}
+		if err := proxier.exec.Command("ip", delArgs...).Run(); err != nil {
+			return fmt.Errorf("ip command:%v returned error: %v", delArgs, err)
+		}
+
+		flushArgs := []string{"route", "flush", "table", routeTable}
+		if err := proxier.exec.Command("ip", flushArgs...).Run(); err != nil {
+			return fmt.Errorf("ip command:%v returned error: %v", flushArgs, err)
+		}
+	}
+
+	conf := filepath.Join(routeDir, routeTable+routeConfSuffix)
+	if err := os.Remove(conf); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (proxier *Proxier) addRoute(routeID string, ip string) error {
+	routeTable := routeTablePrefix + routeID
+
+	conf := filepath.Join(routeDir, routeTable+routeConfSuffix)
+	file, err := os.Create(conf)
+	if err != nil {
+		return err
+	}
+
+	_, err = file.WriteString(fmt.Sprintf("%s %s\n", routeID, routeTable))
+	if err != nil {
+		file.Close()
+		return err
+	}
+	file.Close()
+
+	routeShowArgs := []string{"route", "show", "table", routeID}
+	tableOut, tableErr := proxier.exec.Command("ip", routeShowArgs...).Output()
+	if tableErr != nil {
+		return fmt.Errorf("ip command:%v returned error: %v", routeShowArgs, tableErr)
+	}
+
+	if !strings.Contains(string(tableOut), fmt.Sprintf("default via %s dev %s", ip, proxier.interfaceName)) {
+		addRouteArgs := []string{"route", "add", "default", "via", ip, "dev", proxier.interfaceName, "table", routeTable}
+		if err := proxier.exec.Command("ip", addRouteArgs...).Run(); err != nil {
+			return fmt.Errorf("ip command:%v returned error: %v", addRouteArgs, err)
+		}
+	}
+
+	ruleShowArgs := []string{"rule", "show"}
+	ruleOut, ruleErr := proxier.exec.Command("ip", ruleShowArgs...).Output()
+	if ruleErr != nil {
+		return fmt.Errorf("ip command:%v returned error: %v", ruleShowArgs, ruleErr)
+	}
+	if match, err := regexp.Match(fmt.Sprintf("^%s:", routeID), ruleOut); err != nil || !match {
+		ruleAddArgs := []string{"rule", "add", "fwmark", routeID, "table", routeTable}
+		if err := proxier.exec.Command("ip", ruleAddArgs...).Run(); err != nil {
+			return fmt.Errorf("ip command:%v returned error: %v", ruleAddArgs, err)
+		}
+	}
+
+	return nil
 }
