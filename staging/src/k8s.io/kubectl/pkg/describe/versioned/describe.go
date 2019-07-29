@@ -2475,6 +2475,9 @@ func describeService(service *corev1.Service, endpoints *corev1.Endpoints, event
 			list := buildIngressString(service.Status.LoadBalancer.Ingress)
 			w.Write(LEVEL_0, "LoadBalancer Ingress:\t%s\n", list)
 		}
+		if service.Spec.EgressIP != "" {
+			w.Write(LEVEL_0, "EgressIP:\t%s\n", service.Spec.EgressIP)
+		}
 		for i := range service.Spec.Ports {
 			sp := &service.Spec.Ports[i]
 

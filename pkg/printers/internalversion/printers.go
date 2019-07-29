@@ -181,6 +181,7 @@ func AddHandlers(h printers.PrintHandler) {
 		{Name: "Name", Type: "string", Format: "name", Description: metav1.ObjectMeta{}.SwaggerDoc()["name"]},
 		{Name: "Type", Type: "string", Description: apiv1.ServiceSpec{}.SwaggerDoc()["type"]},
 		{Name: "Cluster-IP", Type: "string", Description: apiv1.ServiceSpec{}.SwaggerDoc()["clusterIP"]},
+		{Name: "Egress-IP", Type: "string", Description: apiv1.ServiceSpec{}.SwaggerDoc()["egressIP"]},
 		{Name: "External-IP", Type: "string", Description: apiv1.ServiceSpec{}.SwaggerDoc()["externalIPs"]},
 		{Name: "Port(s)", Type: "string", Description: apiv1.ServiceSpec{}.SwaggerDoc()["ports"]},
 		{Name: "Age", Type: "string", Description: metav1.ObjectMeta{}.SwaggerDoc()["creationTimestamp"]},
@@ -895,12 +896,7 @@ func loadBalancerStatusStringer(s api.LoadBalancerStatus, wide bool) string {
 
 func getServiceExternalIP(svc *api.Service, wide bool) string {
 	switch svc.Spec.Type {
-	case api.ServiceTypeClusterIP:
-		if len(svc.Spec.ExternalIPs) > 0 {
-			return strings.Join(svc.Spec.ExternalIPs, ",")
-		}
-		return "<none>"
-	case api.ServiceTypeNodePort:
+	case api.ServiceTypeClusterIP, api.ServiceTypeNodePort, api.ServiceTypeEgress:
 		if len(svc.Spec.ExternalIPs) > 0 {
 			return strings.Join(svc.Spec.ExternalIPs, ",")
 		}
@@ -946,13 +942,17 @@ func printService(obj *api.Service, options printers.PrintOptions) ([]metav1beta
 	if len(internalIP) == 0 {
 		internalIP = "<none>"
 	}
+	egressIP := obj.Spec.EgressIP
+	if len(egressIP) == 0 {
+		egressIP = "<none>"
+	}
 	externalIP := getServiceExternalIP(obj, options.Wide)
 	svcPorts := makePortString(obj.Spec.Ports)
 	if len(svcPorts) == 0 {
 		svcPorts = "<none>"
 	}
 
-	row.Cells = append(row.Cells, obj.Name, string(svcType), internalIP, externalIP, svcPorts, translateTimestampSince(obj.CreationTimestamp))
+	row.Cells = append(row.Cells, obj.Name, string(svcType), internalIP, egressIP, externalIP, svcPorts, translateTimestampSince(obj.CreationTimestamp))
 	if options.Wide {
 		row.Cells = append(row.Cells, labels.FormatLabels(obj.Spec.Selector))
 	}
