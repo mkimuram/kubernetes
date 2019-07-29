@@ -3218,6 +3218,8 @@ const (
 	// ClusterIPNone - do not assign a cluster IP
 	// no proxying required and no environment variables should be created for pods
 	ClusterIPNone = "None"
+	// EgressIPNone - do not assign an egress IP
+	EgressIPNone = "None"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -3288,6 +3290,9 @@ const (
 	// an external name that kubedns or equivalent will return as a CNAME
 	// record, with no exposing or proxying of any pods involved.
 	ServiceTypeExternalName ServiceType = "ExternalName"
+
+	// ServiceTypeEgress means a service will access to external via the EgressIP
+	ServiceTypeEgress ServiceType = "Egress"
 )
 
 // Service External Traffic Policy Type string
@@ -3333,7 +3338,7 @@ type LoadBalancerIngress struct {
 // ServiceSpec describes the attributes that a user creates on a service
 type ServiceSpec struct {
 	// Type determines how the Service is exposed. Defaults to ClusterIP. Valid
-	// options are ExternalName, ClusterIP, NodePort, and LoadBalancer.
+	// options are ExternalName, ClusterIP, NodePort, LoadBalancer, and Egress.
 	// "ExternalName" maps to the specified externalName.
 	// "ClusterIP" allocates a cluster-internal IP address for load-balancing to
 	// endpoints. Endpoints are determined by the selector or if that is not
@@ -3345,6 +3350,8 @@ type ServiceSpec struct {
 	// "LoadBalancer" builds on NodePort and creates an
 	// external load-balancer (if supported in the current cloud) which routes
 	// to the clusterIP.
+	// "Egress" maps EgressIP to endpoins that are determined by the selector.
+	// Access from endpoints will be via from the EgressIP.
 	// More info: https://kubernetes.io/docs/concepts/services-networking/service/
 	// +optional
 	Type ServiceType
@@ -3367,10 +3374,15 @@ type ServiceSpec struct {
 	// Valid values are "None", empty string (""), or a valid IP address. "None"
 	// can be specified for headless services when proxying is not required.
 	// Only applies to types ClusterIP, NodePort, and LoadBalancer. Ignored if
-	// type is ExternalName.
+	// type is ExternalName and Egress.
 	// More info: https://kubernetes.io/docs/concepts/services-networking/service/#virtual-ips-and-service-proxies
 	// +optional
 	ClusterIP string
+
+	// EgressIP is the IP address of the egress.
+	// Only applies to types Egress. Ignored if other types.
+	// +optional
+	EgressIP string
 
 	// ExternalName is the external reference that kubedns or equivalent will
 	// return as a CNAME record for this service. No proxying will be involved.
