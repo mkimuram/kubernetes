@@ -49,6 +49,40 @@ func prepareBlockMapperTest(plug *csiPlugin, specVolumeName string, t *testing.T
 	return csiMapper, spec, pv, nil
 }
 
+func prepareBlockUnmapperTest(plug *csiPlugin, specVolumeName string, t *testing.T) (*csiBlockMapper, *volume.Spec, *api.PersistentVolume, error) {
+	registerFakePlugin(testDriver, "endpoint", []string{"1.0.0"}, t)
+	pv := makeTestPV(specVolumeName, 10, testDriver, testVol)
+	spec := volume.NewSpecFromPersistentVolume(pv, pv.Spec.PersistentVolumeSource.CSI.ReadOnly)
+
+	// save volume data
+	dir := getVolumeDeviceDataDir(pv.ObjectMeta.Name, plug.host)
+	if err := os.MkdirAll(dir, 0755); err != nil && !os.IsNotExist(err) {
+		t.Errorf("failed to create dir [%s]: %v", dir, err)
+	}
+
+	if err := saveVolumeData(
+		dir,
+		volDataFileName,
+		map[string]string{
+			volDataKey.specVolID:  pv.ObjectMeta.Name,
+			volDataKey.driverName: testDriver,
+			volDataKey.volHandle:  testVol,
+		},
+	); err != nil {
+		t.Fatalf("failed to save volume data: %v", err)
+	}
+
+	unmapper, err := plug.NewBlockVolumeUnmapper(pv.ObjectMeta.Name, testPodUID)
+	if err != nil {
+		t.Fatalf("failed to make a new Unmapper: %v", err)
+	}
+
+	csiUnmapper := unmapper.(*csiBlockMapper)
+	csiUnmapper.csiClient = setupClient(t, true)
+
+	return csiUnmapper, spec, pv, nil
+}
+
 func TestBlockMapperGetGlobalMapPath(t *testing.T) {
 	defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.CSIBlockVolume, true)()
 
@@ -245,12 +279,12 @@ func TestBlockMapperSetupDevice(t *testing.T) {
 	}
 
 	// Check if SetUpDevice returns the right path
-	publishPath := csiMapper.getPublishPath()
-	if devicePath != publishPath {
-		t.Fatalf("mapper.SetupDevice returned unexpected path %s instead of %v", devicePath, publishPath)
+	expectedDevicePath := csiMapper.getPublishPath()
+	if devicePath != expectedDevicePath {
+		t.Fatalf("mapper.SetupDevice returned unexpected path %s instead of %v", devicePath, expectedDevicePath)
 	}
 
-	// Check if NodeStageVolume staged to the right path
+	// Check if NodeStageVolume staged the volume to the right path
 	stagingPath := csiMapper.getStagingPath()
 	svols := csiMapper.csiClient.(*fakeCsiDriverClient).nodeClient.GetNodeStagedVolumes()
 	svol, ok := svols[csiMapper.volumeID]
@@ -259,16 +293,6 @@ func TestBlockMapperSetupDevice(t *testing.T) {
 	}
 	if svol.Path != stagingPath {
 		t.Errorf("csi server expected device path %s, got %s", stagingPath, svol.Path)
-	}
-
-	// Check if NodePublishVolume published to the right path
-	pvols := csiMapper.csiClient.(*fakeCsiDriverClient).nodeClient.GetNodePublishedVolumes()
-	pvol, ok := pvols[csiMapper.volumeID]
-	if !ok {
-		t.Error("csi server may not have received NodePublishVolume call")
-	}
-	if pvol.Path != publishPath {
-		t.Errorf("csi server expected path %s, got %s", publishPath, pvol.Path)
 	}
 }
 
@@ -306,10 +330,22 @@ func TestBlockMapperMapPodDevice(t *testing.T) {
 	}
 	t.Log("created attachement ", attachID)
 
-	// Map device to global and pod device map path
+	publishPath := csiMapper.getPublishPath()
+
+	// Call MapPodDevice
 	err = csiMapper.MapPodDevice()
 	if err != nil {
 		t.Fatalf("mapper failed to GetGlobalMapPath: %v", err)
+	}
+
+	// Check if NodePublishVolume published the volume to the right path
+	pvols := csiMapper.csiClient.(*fakeCsiDriverClient).nodeClient.GetNodePublishedVolumes()
+	pvol, ok := pvols[csiMapper.volumeID]
+	if !ok {
+		t.Error("csi server may not have received NodePublishVolume call")
+	}
+	if pvol.Path != publishPath {
+		t.Errorf("csi server expected path %s, got %s", publishPath, pvol.Path)
 	}
 }
 
@@ -351,79 +387,188 @@ func TestBlockMapperMapPodDeviceNotSupportAttach(t *testing.T) {
 		t.Fatalf("Failed to make a new Mapper: %v", err)
 	}
 	csiMapper.csiClient = setupClient(t, true)
+	publishPath := csiMapper.getPublishPath()
 
-	// Map device to global and pod device map path
+	// Call MapPodDevice
 	err = csiMapper.MapPodDevice()
 	if err != nil {
 		t.Fatalf("mapper failed to GetGlobalMapPath: %v", err)
+	}
+
+	// Check if NodePublishVolume published the volume to the right path
+	pvols := csiMapper.csiClient.(*fakeCsiDriverClient).nodeClient.GetNodePublishedVolumes()
+	pvol, ok := pvols[csiMapper.volumeID]
+	if !ok {
+		t.Error("csi server may not have received NodePublishVolume call")
+	}
+	if pvol.Path != publishPath {
+		t.Errorf("csi server expected path %s, got %s", publishPath, pvol.Path)
 	}
 }
 
 func TestBlockMapperTearDownDevice(t *testing.T) {
 	defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.CSIBlockVolume, true)()
 
-	plug, tmpDir := newTestPlugin(t, nil)
-	defer os.RemoveAll(tmpDir)
-	fakeClient := fakeclient.NewSimpleClientset()
-	host := volumetest.NewFakeVolumeHostWithCSINodeName(
-		tmpDir,
-		fakeClient,
-		nil,
-		"fakeNode",
-		nil,
-	)
-	plug.host = host
-
-	_, spec, pv, err := prepareBlockMapperTest(plug, "test-pv", t)
-	if err != nil {
-		t.Fatalf("Failed to make a new Mapper: %v", err)
-	}
-
-	// save volume data
-	dir := getVolumeDeviceDataDir(pv.ObjectMeta.Name, plug.host)
-	if err := os.MkdirAll(dir, 0755); err != nil && !os.IsNotExist(err) {
-		t.Errorf("failed to create dir [%s]: %v", dir, err)
-	}
-
-	if err := saveVolumeData(
-		dir,
-		volDataFileName,
-		map[string]string{
-			volDataKey.specVolID:  pv.ObjectMeta.Name,
-			volDataKey.driverName: testDriver,
-			volDataKey.volHandle:  testVol,
+	testCases := []struct {
+		name                    string
+		shouldStagingPathExist  bool
+		expectNodeUnstageCalled bool
+	}{
+		{
+			name:                    "StagingPath exists and NodeUnstageVolume should be called",
+			shouldStagingPathExist:  true,
+			expectNodeUnstageCalled: true,
 		},
-	); err != nil {
-		t.Fatalf("failed to save volume data: %v", err)
+		{
+			name:                    "StagingPath doesn't exist and NodeUnstageVolume shouldn't be called",
+			shouldStagingPathExist:  false,
+			expectNodeUnstageCalled: false,
+		},
 	}
+	for _, tc := range testCases {
+		t.Logf("test case: %s", tc.name)
 
-	unmapper, err := plug.NewBlockVolumeUnmapper(pv.ObjectMeta.Name, testPodUID)
-	if err != nil {
-		t.Fatalf("failed to make a new Unmapper: %v", err)
+		plug, tmpDir := newTestPlugin(t, nil)
+		defer os.RemoveAll(tmpDir)
+		fakeClient := fakeclient.NewSimpleClientset()
+		host := volumetest.NewFakeVolumeHostWithCSINodeName(
+			tmpDir,
+			fakeClient,
+			nil,
+			"fakeNode",
+			nil,
+		)
+		plug.host = host
+
+		csiUnmapper, spec, _, err := prepareBlockUnmapperTest(plug, "test-pv", t)
+		if err != nil {
+			t.Fatalf("Failed to make a new Mapper: %v", err)
+		}
+
+		globalMapPath, err := csiUnmapper.GetGlobalMapPath(spec)
+		if err != nil {
+			t.Fatalf("unmapper failed to GetGlobalMapPath: %v", err)
+		}
+
+		stagingPath := csiUnmapper.getStagingPath()
+		if tc.shouldStagingPathExist {
+			// Create dummy stagingPath which should be created on SetupDevice
+			if err := os.MkdirAll(stagingPath, 0750); err != nil {
+				t.Fatalf("unmapper failed to create dirctory for stagingPath(%s): %v", stagingPath, err)
+			}
+		} else {
+			if _, err := os.Stat(stagingPath); err != nil {
+				if !os.IsNotExist(err) {
+					t.Fatalf("Checking if stagingPath %s exists failed: %v", stagingPath, err)
+				}
+				// Should reach this path (stagingPath not exist) for tc.shouldStagingPathExist == false case
+
+			} else {
+				t.Fatalf("StagingPath %s shouldn't exist for this test, but exists", stagingPath)
+			}
+		}
+
+		// Add volume to fakeCsiDriverClient's nodeStagedVolumes to make it be able to check if node unstage is called later
+		csiUnmapper.csiClient.(*fakeCsiDriverClient).nodeClient.AddNodeStagedVolume(csiUnmapper.volumeID, stagingPath, map[string]string{})
+
+		err = csiUnmapper.TearDownDevice(globalMapPath, stagingPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// ensure csi client call and node unstaged
+		vols := csiUnmapper.csiClient.(*fakeCsiDriverClient).nodeClient.GetNodeStagedVolumes()
+
+		// Existence of the key for vols means that node unstage is not called,
+		// because fakeCsiDriverClient delete the key if it is called for the key
+		_, notCalled := vols[csiUnmapper.volumeID]
+
+		if tc.expectNodeUnstageCalled && notCalled {
+			t.Error("csi server may not have received NodeUnstageVolume call")
+		} else if !tc.expectNodeUnstageCalled && !notCalled {
+			t.Error("csi server received NodeUnstageVolume call, but it shouldn't receive the call")
+		}
+
 	}
+}
 
-	csiUnmapper := unmapper.(*csiBlockMapper)
-	csiUnmapper.csiClient = setupClient(t, true)
+func TestBlockMapperUnmapPodDevice(t *testing.T) {
+	defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.CSIBlockVolume, true)()
 
-	globalMapPath, err := csiUnmapper.GetGlobalMapPath(spec)
-	if err != nil {
-		t.Fatalf("unmapper failed to GetGlobalMapPath: %v", err)
+	testCases := []struct {
+		name                     string
+		shouldPublishPathExist   bool
+		expectNodeUnpblishCalled bool
+	}{
+		{
+			name:                     "PublishPath exists and NodeUnpublishVolume should be called",
+			shouldPublishPathExist:   true,
+			expectNodeUnpblishCalled: true,
+		},
+		{
+			name:                     "PublishPath doesn't exist and NodeUnpublishVolume shouldn't be called",
+			shouldPublishPathExist:   false,
+			expectNodeUnpblishCalled: false,
+		},
 	}
+	for _, tc := range testCases {
+		t.Logf("test case: %s", tc.name)
+		plug, tmpDir := newTestPlugin(t, nil)
+		defer os.RemoveAll(tmpDir)
 
-	err = csiUnmapper.TearDownDevice(globalMapPath, "/dev/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+		fakeClient := fakeclient.NewSimpleClientset()
+		host := volumetest.NewFakeVolumeHostWithCSINodeName(
+			tmpDir,
+			fakeClient,
+			nil,
+			"fakeNode",
+			nil,
+		)
+		plug.host = host
 
-	// ensure csi client call and node unpblished
-	pubs := csiUnmapper.csiClient.(*fakeCsiDriverClient).nodeClient.GetNodePublishedVolumes()
-	if _, ok := pubs[csiUnmapper.volumeID]; ok {
-		t.Error("csi server may not have received NodeUnpublishVolume call")
-	}
+		csiUnmapper, _, _, err := prepareBlockUnmapperTest(plug, "test-pv", t)
+		if err != nil {
+			t.Fatalf("Failed to make a new Unmapper: %v", err)
+		}
 
-	// ensure csi client call and node unstaged
-	vols := csiUnmapper.csiClient.(*fakeCsiDriverClient).nodeClient.GetNodeStagedVolumes()
-	if _, ok := vols[csiUnmapper.volumeID]; ok {
-		t.Error("csi server may not have received NodeUnstageVolume call")
+		publishPath := csiUnmapper.getPublishPath()
+		if tc.shouldPublishPathExist {
+			// Create dummy publishPath which should be created on MapPodDevice
+			if err := os.MkdirAll(publishPath, 0750); err != nil {
+				t.Fatalf("unmapper failed to create dirctory for publishPath(%s): %v", publishPath, err)
+			}
+		} else {
+			if _, err := os.Stat(publishPath); err != nil {
+				if !os.IsNotExist(err) {
+					t.Fatalf("Checking if publishPath %s exists failed: %v", publishPath, err)
+				}
+				// Should reach this path (publishPath not exist) for tc.shouldPublishPathExist == false case
+
+			} else {
+				t.Fatalf("PublishPath %s shouldn't exist for this test, but exists", publishPath)
+			}
+		}
+
+		// Add volume to fakeCsiDriverClient's nodePublishedVolumes to make it be able to check if node unpublish is called later
+		csiUnmapper.csiClient.(*fakeCsiDriverClient).nodeClient.AddNodePublishedVolume(csiUnmapper.volumeID, publishPath, map[string]string{})
+
+		// Call UnmapPodDevice
+		err = csiUnmapper.UnmapPodDevice()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// ensure csi client call and node unpublished
+		pubs := csiUnmapper.csiClient.(*fakeCsiDriverClient).nodeClient.GetNodePublishedVolumes()
+
+		// Existence of the key for pubs means that node unpublish is not called,
+		// because fakeCsiDriverClient delete the key if it is called for the key
+		_, notCalled := pubs[csiUnmapper.volumeID]
+
+		if tc.expectNodeUnpblishCalled && notCalled {
+			t.Error("csi server may not have received NodeUnpublishVolume call")
+		} else if !tc.expectNodeUnpblishCalled && !notCalled {
+			t.Error("csi server received NodeUnpublishVolume call, but it shouldn't receive the call")
+		}
 	}
 }
