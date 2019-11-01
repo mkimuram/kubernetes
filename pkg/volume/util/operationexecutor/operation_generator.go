@@ -1055,15 +1055,17 @@ func (og *operationGenerator) GenerateMapVolumeFunc(
 			klog.Infof(volumeToMount.GenerateMsgDetailed("MapVolume.WaitForAttach succeeded", fmt.Sprintf("DevicePath %q", devicePath)))
 
 		}
-		// A plugin doesn't have attacher also needs to map device to global map path with SetUpDevice()
+
+		// Local volume plugin and CSI plugin do plugin dependent works in SetUpDevice().
 		pluginDevicePath, mapErr := blockVolumeMapper.SetUpDevice()
 		if mapErr != nil {
 			// On failure, return error. Caller will log and retry.
 			return volumeToMount.GenerateError("MapVolume.SetUp failed", mapErr)
 		}
 
-		// if pluginDevicePath is provided, assume attacher may not provide device
-		// or attachment flow uses SetupDevice to get device path
+		// For local volume plugin and CSI plugin, devicePath is not provided by WaitForAttach,
+		// instead it is provided as pluginDevicePath by SetUpDevice.
+		// So, devicePath needs to be overwritten with pluginDevicePath, if it is provided.
 		if len(pluginDevicePath) != 0 {
 			devicePath = pluginDevicePath
 		}
@@ -1080,9 +1082,13 @@ func (og *operationGenerator) GenerateMapVolumeFunc(
 			return volumeToMount.GenerateError("MapVolume type assertion error", fmt.Errorf("volume host does not implement KubeletVolumeHost interface"))
 		}
 		hu := kvh.GetHostUtil()
-		devicePath, err = hu.EvalHostSymlinks(devicePath)
+		resolvedDevicePath, err := hu.EvalHostSymlinks(devicePath)
 		if err != nil {
-			return volumeToMount.GenerateError("MapVolume.EvalHostSymlinks failed", err)
+			// For CSI plugin, device won't be available at devicePath until MapPodDevice is called,
+			// so, just warn and continue.
+			klog.Warningf("MapVolume.EvalHostSymlinks failed for %s: %v", devicePath, err)
+		} else {
+			devicePath = resolvedDevicePath
 		}
 
 		// Execute driver specific map
