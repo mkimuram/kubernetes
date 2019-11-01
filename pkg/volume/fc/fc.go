@@ -416,7 +416,7 @@ func (b *fcDiskMapper) SetUpDevice() (string, error) {
 	return "", nil
 }
 
-func (b *fcDiskMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, volumeMapName string, podUID types.UID) error {
+func (b *fcDiskMapper) MapPodDevice() error {
 	return nil
 }
 
@@ -437,6 +437,10 @@ func (c *fcDiskUnmapper) TearDownDevice(mapPath, devicePath string) error {
 		return fmt.Errorf("fc: failed to delete the directory: %s\nError: %v", mapPath, err)
 	}
 	klog.V(4).Infof("fc: successfully detached disk: %s", mapPath)
+	return nil
+}
+
+func (c *fcDiskUnmapper) UnmapPodDevice() error {
 	return nil
 }
 

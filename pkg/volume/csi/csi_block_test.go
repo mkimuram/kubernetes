@@ -272,7 +272,7 @@ func TestBlockMapperSetupDevice(t *testing.T) {
 	}
 }
 
-func TestBlockMapperMapDevice(t *testing.T) {
+func TestBlockMapperMapPodDevice(t *testing.T) {
 	defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.CSIBlockVolume, true)()
 
 	plug, tmpDir := newTestPlugin(t, nil)
@@ -306,24 +306,14 @@ func TestBlockMapperMapDevice(t *testing.T) {
 	}
 	t.Log("created attachement ", attachID)
 
-	devicePath, err := csiMapper.SetUpDevice()
-	if err != nil {
-		t.Fatalf("mapper failed to SetupDevice: %v", err)
-	}
-	globalMapPath, err := csiMapper.GetGlobalMapPath(csiMapper.spec)
-	if err != nil {
-		t.Fatalf("mapper failed to GetGlobalMapPath: %v", err)
-	}
-
 	// Map device to global and pod device map path
-	volumeMapPath, volName := csiMapper.GetPodDeviceMapPath()
-	err = csiMapper.MapDevice(devicePath, globalMapPath, volumeMapPath, volName, csiMapper.podUID)
+	err = csiMapper.MapPodDevice()
 	if err != nil {
 		t.Fatalf("mapper failed to GetGlobalMapPath: %v", err)
 	}
 }
 
-func TestBlockMapperMapDeviceNotSupportAttach(t *testing.T) {
+func TestBlockMapperMapPodDeviceNotSupportAttach(t *testing.T) {
 	defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.CSIBlockVolume, true)()
 	defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.CSIDriverRegistry, true)()
 
@@ -361,18 +351,9 @@ func TestBlockMapperMapDeviceNotSupportAttach(t *testing.T) {
 		t.Fatalf("Failed to make a new Mapper: %v", err)
 	}
 	csiMapper.csiClient = setupClient(t, true)
-	devicePath, err := csiMapper.SetUpDevice()
-	if err != nil {
-		t.Fatalf("mapper failed to SetupDevice: %v", err)
-	}
-	globalMapPath, err := csiMapper.GetGlobalMapPath(csiMapper.spec)
-	if err != nil {
-		t.Fatalf("mapper failed to GetGlobalMapPath: %v", err)
-	}
 
 	// Map device to global and pod device map path
-	volumeMapPath, volName := csiMapper.GetPodDeviceMapPath()
-	err = csiMapper.MapDevice(devicePath, globalMapPath, volumeMapPath, volName, csiMapper.podUID)
+	err = csiMapper.MapPodDevice()
 	if err != nil {
 		t.Fatalf("mapper failed to GetGlobalMapPath: %v", err)
 	}

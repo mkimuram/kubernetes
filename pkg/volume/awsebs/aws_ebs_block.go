@@ -129,6 +129,10 @@ func (c *awsElasticBlockStoreUnmapper) TearDownDevice(mapPath, devicePath string
 	return nil
 }
 
+func (c *awsElasticBlockStoreUnmapper) UnmapPodDevice() error {
+	return nil
+}
+
 type awsElasticBlockStoreUnmapper struct {
 	*awsElasticBlockStore
 }
@@ -146,7 +150,7 @@ func (b *awsElasticBlockStoreMapper) SetUpDevice() (string, error) {
 	return "", nil
 }
 
-func (b *awsElasticBlockStoreMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, volumeMapName string, podUID types.UID) error {
+func (b *awsElasticBlockStoreMapper) MapPodDevice() error {
 	return nil
 }
 

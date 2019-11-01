@@ -132,6 +132,10 @@ func (c *cinderPluginUnmapper) TearDownDevice(mapPath, devicePath string) error 
 	return nil
 }
 
+func (c *cinderPluginUnmapper) UnmapPodDevice() error {
+	return nil
+}
+
 type cinderPluginUnmapper struct {
 	*cinderVolume
 }
@@ -149,7 +153,7 @@ func (b *cinderVolumeMapper) SetUpDevice() (string, error) {
 	return "", nil
 }
 
-func (b *cinderVolumeMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, volumeMapName string, podUID types.UID) error {
+func (b *cinderVolumeMapper) MapPodDevice() error {
 	return nil
 }
 

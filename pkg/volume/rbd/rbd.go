@@ -915,7 +915,7 @@ func (rbd *rbdDiskMapper) SetUpDevice() (string, error) {
 	return "", nil
 }
 
-func (rbd *rbdDiskMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, volumeMapName string, podUID types.UID) error {
+func (rbd *rbdDiskMapper) MapPodDevice() error {
 	return nil
 }
 
@@ -999,6 +999,10 @@ func (rbd *rbdDiskUnmapper) TearDownDevice(mapPath, _ string) error {
 	}
 	klog.V(4).Infof("rbd: successfully detached disk: %s", mapPath)
 
+	return nil
+}
+
+func (rbd *rbdDiskUnmapper) UnmapPodDevice() error {
 	return nil
 }
 

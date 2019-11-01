@@ -122,6 +122,10 @@ func (c *azureDataDiskUnmapper) TearDownDevice(mapPath, devicePath string) error
 	return nil
 }
 
+func (c *azureDataDiskUnmapper) UnmapPodDevice() error {
+	return nil
+}
+
 type azureDataDiskUnmapper struct {
 	*dataDisk
 }
@@ -139,7 +143,7 @@ func (b *azureDataDiskMapper) SetUpDevice() (string, error) {
 	return "", nil
 }
 
-func (b *azureDataDiskMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, volumeMapName string, podUID types.UID) error {
+func (b *azureDataDiskMapper) MapPodDevice() error {
 	return nil
 }
 

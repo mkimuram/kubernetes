@@ -620,7 +620,7 @@ func (m *localVolumeMapper) SetUpDevice() (string, error) {
 	return globalPath, nil
 }
 
-func (m *localVolumeMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, volumeMapName string, podUID types.UID) error {
+func (m *localVolumeMapper) MapPodDevice() error {
 	return nil
 }
 
@@ -634,6 +634,11 @@ var _ volume.BlockVolumeUnmapper = &localVolumeUnmapper{}
 // TearDownDevice will undo SetUpDevice procedure. In local PV, all of this already handled by operation_generator.
 func (u *localVolumeUnmapper) TearDownDevice(mapPath, _ string) error {
 	klog.V(4).Infof("local: TearDownDevice completed for: %s", mapPath)
+	return nil
+}
+
+// UnmapPodDevice will unmaps the block device path. In local PV, all of this already handled by operation_generator.
+func (u *localVolumeUnmapper) UnmapPodDevice() error {
 	return nil
 }
 

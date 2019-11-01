@@ -1086,14 +1086,14 @@ func (og *operationGenerator) GenerateMapVolumeFunc(
 		}
 
 		// Execute driver specific map
-		volumeMapPath, volName := blockVolumeMapper.GetPodDeviceMapPath()
-		mapErr = blockVolumeMapper.MapDevice(devicePath, globalMapPath, volumeMapPath, volName, volumeToMount.Pod.UID)
+		mapErr = blockVolumeMapper.MapPodDevice()
 		if mapErr != nil {
 			// On failure, return error. Caller will log and retry.
 			return volumeToMount.GenerateError("MapVolume.MapPodDevice failed", mapErr)
 		}
 
 		// Execute common map
+		volumeMapPath, volName := blockVolumeMapper.GetPodDeviceMapPath()
 		mapErr = ioutil.MapBlockVolume(og.blkUtil, devicePath, globalMapPath, volumeMapPath, volName, volumeToMount.Pod.UID)
 		if mapErr != nil {
 			// On failure, return error. Caller will log and retry.
@@ -1109,13 +1109,13 @@ func (og *operationGenerator) GenerateMapVolumeFunc(
 		}
 
 		// Device mapping for global map path succeeded
-		simpleMsg, detailedMsg := volumeToMount.GenerateMsg("MapVolume.MapDevice succeeded", fmt.Sprintf("globalMapPath %q", globalMapPath))
+		simpleMsg, detailedMsg := volumeToMount.GenerateMsg("MapVolume.MapPodDevice succeeded", fmt.Sprintf("globalMapPath %q", globalMapPath))
 		verbosity := klog.Level(4)
 		og.recorder.Eventf(volumeToMount.Pod, v1.EventTypeNormal, kevents.SuccessfulMountVolume, simpleMsg)
 		klog.V(verbosity).Infof(detailedMsg)
 
 		// Device mapping for pod device map path succeeded
-		simpleMsg, detailedMsg = volumeToMount.GenerateMsg("MapVolume.MapDevice succeeded", fmt.Sprintf("volumeMapPath %q", volumeMapPath))
+		simpleMsg, detailedMsg = volumeToMount.GenerateMsg("MapVolume.MapPodDevice succeeded", fmt.Sprintf("volumeMapPath %q", volumeMapPath))
 		verbosity = klog.Level(1)
 		og.recorder.Eventf(volumeToMount.Pod, v1.EventTypeNormal, kevents.SuccessfulMountVolume, simpleMsg)
 		klog.V(verbosity).Infof(detailedMsg)
@@ -1216,6 +1216,13 @@ func (og *operationGenerator) GenerateUnmapVolumeFunc(
 		if unmapErr != nil {
 			// On failure, return error. Caller will log and retry.
 			return volumeToUnmount.GenerateError("UnmapVolume.UnmapBlockVolume failed", unmapErr)
+		}
+
+		// Execute plugin specific unmap
+		unmapErr = blockVolumeUnmapper.UnmapPodDevice()
+		if unmapErr != nil {
+			// On failure, return error. Caller will log and retry.
+			return volumeToUnmount.GenerateError("UnmapVolume.UnmapPodDevice failed", unmapErr)
 		}
 
 		klog.Infof(

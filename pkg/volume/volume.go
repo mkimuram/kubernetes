@@ -169,8 +169,8 @@ type BlockVolumeMapper interface {
 	// This may be called more than once, so implementations must be idempotent.
 	SetUpDevice() (string, error)
 
-	// Map maps the block device path for the specified spec and pod.
-	MapDevice(devicePath, globalMapPath, volumeMapPath, volumeMapName string, podUID types.UID) error
+	// MapPodDevice maps the block device path for the specified spec and pod.
+	MapPodDevice() error
 }
 
 // BlockVolumeUnmapper interface provides methods to cleanup/unmap the volumes.
@@ -181,6 +181,9 @@ type BlockVolumeUnmapper interface {
 	// If the plugin is non-attachable, this method detaches the volume
 	// from a node.
 	TearDownDevice(mapPath string, devicePath string) error
+
+	// UnmapPodDevice unmaps the block device path
+	UnmapPodDevice() error
 }
 
 // Provisioner is an interface that creates templates for PersistentVolumes

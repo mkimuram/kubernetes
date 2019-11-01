@@ -265,7 +265,7 @@ func (m *csiBlockMapper) SetUpDevice() (string, error) {
 	return publishPath, nil
 }
 
-func (m *csiBlockMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, volumeMapName string, podUID types.UID) error {
+func (m *csiBlockMapper) MapPodDevice() error {
 	return nil
 }
 
@@ -360,5 +360,10 @@ func (m *csiBlockMapper) TearDownDevice(globalMapPath, devicePath string) error 
 		}
 	}
 
+	return nil
+}
+
+// UnmapPodDevice unmaps the block device path.
+func (m *csiBlockMapper) UnmapPodDevice() error {
 	return nil
 }

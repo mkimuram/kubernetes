@@ -139,6 +139,10 @@ func (c *gcePersistentDiskUnmapper) TearDownDevice(mapPath, devicePath string) e
 	return nil
 }
 
+func (c *gcePersistentDiskUnmapper) UnmapPodDevice() error {
+	return nil
+}
+
 type gcePersistentDiskUnmapper struct {
 	*gcePersistentDisk
 }
@@ -156,7 +160,7 @@ func (b *gcePersistentDiskMapper) SetUpDevice() (string, error) {
 	return "", nil
 }
 
-func (b *gcePersistentDiskMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, volumeMapName string, podUID types.UID) error {
+func (b *gcePersistentDiskMapper) MapPodDevice() error {
 	return nil
 }
 

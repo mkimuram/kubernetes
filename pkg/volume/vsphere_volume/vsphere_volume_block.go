@@ -136,7 +136,7 @@ func (v vsphereBlockVolumeMapper) SetUpDevice() (string, error) {
 	return "", nil
 }
 
-func (v vsphereBlockVolumeMapper) MapDevice(devicePath, globalMapPath, volumeMapPath, volumeMapName string, podUID types.UID) error {
+func (v vsphereBlockVolumeMapper) MapPodDevice() error {
 	return nil
 }
 
@@ -147,6 +147,10 @@ type vsphereBlockVolumeUnmapper struct {
 }
 
 func (v *vsphereBlockVolumeUnmapper) TearDownDevice(mapPath, devicePath string) error {
+	return nil
+}
+
+func (v *vsphereBlockVolumeUnmapper) UnmapPodDevice() error {
 	return nil
 }
 
