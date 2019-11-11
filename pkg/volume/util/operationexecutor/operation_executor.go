@@ -22,6 +22,7 @@ package operationexecutor
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"k8s.io/klog"
@@ -36,7 +37,6 @@ import (
 	"k8s.io/kubernetes/pkg/volume/util/hostutil"
 	"k8s.io/kubernetes/pkg/volume/util/nestedpendingoperations"
 	volumetypes "k8s.io/kubernetes/pkg/volume/util/types"
-	"k8s.io/kubernetes/pkg/volume/util/volumepathhandler"
 )
 
 // OperationExecutor defines a set of operations for attaching, detaching,
@@ -952,18 +952,18 @@ func (oe *operationExecutor) CheckVolumeExistenceOperation(
 	// Block Volume case
 	// Check mount path directory if volume still exists, then return true if volume
 	// is there. Either plugin is attachable or non-attachable, the plugin should
-	// have symbolic link associated to raw block device under pod device map
+	// have file associated to raw block device under pod device map
 	// if volume exists.
-	blkutil := volumepathhandler.NewBlockVolumePathHandler()
-	var islinkExist bool
-	var checkErr error
-	if islinkExist, checkErr = blkutil.IsSymlinkExist(mountPath); checkErr != nil {
+	if _, err := os.Stat(mountPath); err != nil {
+		if !os.IsNotExist(err) {
+			return false, nil
+		}
 		return false, fmt.Errorf("Could not check whether the block volume %q (spec.Name: %q) pod %q (UID: %q) is mapped to: %v",
 			uniqueVolumeName,
 			volumeName,
 			podName,
 			podUID,
-			checkErr)
+			err)
 	}
-	return islinkExist, nil
+	return true, nil
 }
