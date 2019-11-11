@@ -520,12 +520,15 @@ func MapBlockVolume(
 	}
 
 	// map devicePath to pod volume path
-	mapErr = blkUtil.MapDevice(devicePath, podVolumeMapPath, volumeMapName, false /* bindMount */)
-	if mapErr != nil {
-		return fmt.Errorf("blkUtil.MapDevice failed. devicePath: %s, podVolumeMapPath:%s, volumeMapName: %s, bindMount: %v: %v",
-			devicePath, podVolumeMapPath, volumeMapName, false, mapErr)
+	// MapDevice should not be called if devicePath is {podVolumeMapPath}/{volumeMapName}.
+	// In such a case, mapping for the path will be handled by plugin.
+	if devicePath != filepath.Join(podVolumeMapPath, volumeMapName) {
+		mapErr = blkUtil.MapDevice(devicePath, podVolumeMapPath, volumeMapName, false /* bindMount */)
+		if mapErr != nil {
+			return fmt.Errorf("blkUtil.MapDevice failed. devicePath: %s, podVolumeMapPath:%s, volumeMapName: %s, bindMount: %v: %v",
+				devicePath, podVolumeMapPath, volumeMapName, false, mapErr)
+		}
 	}
-
 	// Take file descriptor lock to keep a block device opened. Otherwise, there is a case
 	// that the block device is silently removed and attached another device with the same name.
 	// Container runtime can't handle this problem. To avoid unexpected condition fd lock
@@ -557,6 +560,10 @@ func UnmapBlockVolume(
 	}
 
 	// unmap devicePath from pod volume path
+	// TODO: Consider a way to avoid calling UnmapDevice when it should be handled by plugin.
+	//       (Similar check to MapBlockVolume can't be applied because devicePath is not provided.
+	//        However, current code should be safe unless the path created by plugin is not symlink,
+	//        because UnmapDevice won't delete the file when it is not symlink.)
 	unmapDeviceErr := blkUtil.UnmapDevice(podDeviceUnmapPath, volumeMapName, false /* bindMount */)
 	if unmapDeviceErr != nil {
 		return fmt.Errorf("blkUtil.DetachFileDevice failed. podDeviceUnmapPath:%s, volumeMapName: %s, bindMount: %v: %v",
