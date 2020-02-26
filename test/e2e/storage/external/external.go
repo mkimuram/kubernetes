@@ -177,7 +177,16 @@ type driverDefinition struct {
 		// snapshotter class with DriverInfo.Name as provisioner.
 		FromName bool
 
-		// TODO (?): load from file
+		// FromFile is used only when FromName is false.  It
+		// loads a snapshot class from the given .yaml or .json
+		// file. File names are resolved by the
+		// framework.testfiles package, which typically means
+		// that they can be absolute or relative to the test
+		// suite's --repo-root parameter.
+		//
+		// This can be used when the snapshot class is meant to have
+		// additional parameters.
+		FromFile string
 	}
 
 	// InlineVolumes defines one or more volumes for use as inline
@@ -244,7 +253,7 @@ func (d *driverDefinition) SkipUnsupportedTest(pattern testpatterns.TestPattern)
 	case "":
 		supported = true
 	case testpatterns.DynamicCreatedSnapshot:
-		if d.SnapshotClass.FromName {
+		if d.SnapshotClass.FromName || d.SnapshotClass.FromFile != "" {
 			supported = true
 		}
 	}
@@ -289,17 +298,48 @@ func (d *driverDefinition) GetDynamicProvisionStorageClass(config *testsuites.Pe
 	return sc
 }
 
-func (d *driverDefinition) GetSnapshotClass(config *testsuites.PerTestConfig) *unstructured.Unstructured {
-	if !d.SnapshotClass.FromName {
-		framework.Skipf("Driver %q does not support snapshotting - skipping", d.DriverInfo.Name)
+func loadSnapshotClass(filename string) (*unstructured.Unstructured, error) {
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	snapshotClass := &unstructured.Unstructured{}
+
+	if err := runtime.DecodeInto(scheme.Codecs.UniversalDecoder(), data, snapshotClass); err != nil {
+		return nil, errors.Wrap(err, filename)
 	}
 
-	snapshotter := d.DriverInfo.Name
-	parameters := map[string]string{}
-	ns := config.Framework.Namespace.Name
-	suffix := snapshotter + "-vsc"
+	return snapshotClass, nil
+}
 
-	return testsuites.GetSnapshotClass(snapshotter, parameters, ns, suffix)
+func (d *driverDefinition) GetSnapshotClass(config *testsuites.PerTestConfig) *unstructured.Unstructured {
+	if !d.SnapshotClass.FromName && d.SnapshotClass.FromFile == "" {
+		framework.Skipf("Driver %q does not support snapshotting - skipping", d.DriverInfo.Name)
+	}
+	var snapshotClass *unstructured.Unstructured
+
+	switch {
+	case d.SnapshotClass.FromName:
+		snapshotter := d.DriverInfo.Name
+		parameters := map[string]string{}
+		ns := config.Framework.Namespace.Name
+		suffix := snapshotter + "-vsc"
+		snapshotClass = testsuites.GetSnapshotClass(snapshotter, parameters, ns, suffix)
+	case d.SnapshotClass.FromFile != "":
+		var err error
+		f := config.Framework
+
+		snapshotClass, err = loadSnapshotClass(d.SnapshotClass.FromFile)
+		framework.ExpectNoError(err, "load snapshot class from %s", d.SnapshotClass.FromFile)
+
+		// Check snapshotClass
+		framework.ExpectEqual(snapshotClass.GetKind(), "VolumeSnapshotClass", "snapshot class from %s isn't VolumeSnapshotClass", d.SnapshotClass.FromFile)
+
+		// Change name to avoid name collision
+		snapshotClass.SetName(snapshotClass.GetName() + "-" + f.UniqueName)
+	}
+
+	return snapshotClass
 }
 
 func (d *driverDefinition) GetClaimSize() string {
