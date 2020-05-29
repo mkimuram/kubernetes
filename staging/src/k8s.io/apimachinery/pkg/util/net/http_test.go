@@ -158,16 +158,28 @@ func TestProxierWithNoProxyCIDR(t *testing.T) {
 			expectedDelegated: true,
 		},
 		{
-			name:              "no cidr",
+			name:              "no cidr and not match",
 			noProxy:           "192.168.63.1",
 			url:               "https://192.168.143.1/api",
 			expectedDelegated: true,
 		},
 		{
-			name:              "hostname",
+			name:              "no cidr and match",
+			noProxy:           "192.168.143.1",
+			url:               "https://192.168.143.1/api",
+			expectedDelegated: true,
+		},
+		{
+			name:              "hostname and cidr not match",
 			noProxy:           "192.168.63.0/24,192.168.143.0/24",
 			url:               "https://my-hostname/api",
 			expectedDelegated: true,
+		},
+		{
+			name:              "resolved IP address for hostname and cider match",
+			noProxy:           "127.0.0.0/8,::1/128",
+			url:               "https://localhost/api",
+			expectedDelegated: false,
 		},
 		{
 			name:              "match second cidr",
