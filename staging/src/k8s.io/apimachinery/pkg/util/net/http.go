@@ -334,7 +334,16 @@ func NewProxierWithNoProxyCIDR(delegate func(req *http.Request) (*url.URL, error
 	return func(req *http.Request) (*url.URL, error) {
 		ip := net.ParseIP(req.URL.Hostname())
 		if ip == nil {
-			return delegate(req)
+			// Hostname wasn't an IP address, so try resolving IP address
+			ips, err := net.LookupHost(req.URL.Hostname())
+			if err != nil || len(ips) == 0 {
+				return delegate(req)
+			}
+			// Use only first address
+			ip = net.ParseIP(ips[0])
+			if ip == nil {
+				return delegate(req)
+			}
 		}
 
 		for _, cidr := range cidrs {
