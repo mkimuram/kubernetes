@@ -631,6 +631,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationscorev1.PersistentVolumeClaimStatusApplyConfiguration{}
 	case corev1.SchemeGroupVersion.WithKind("PersistentVolumeClaimTemplate"):
 		return &applyconfigurationscorev1.PersistentVolumeClaimTemplateApplyConfiguration{}
+	case corev1.SchemeGroupVersion.WithKind("PersistentVolumeClaimTransfer"):
+		return &applyconfigurationscorev1.PersistentVolumeClaimTransferApplyConfiguration{}
 	case corev1.SchemeGroupVersion.WithKind("PersistentVolumeClaimVolumeSource"):
 		return &applyconfigurationscorev1.PersistentVolumeClaimVolumeSourceApplyConfiguration{}
 	case corev1.SchemeGroupVersion.WithKind("PersistentVolumeSource"):

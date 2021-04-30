@@ -457,6 +457,11 @@ type PersistentVolumeClaimSpec struct {
 	// it will create a new volume based on the contents of the specified data source.
 	// +optional
 	DataSource *TypedLocalObjectReference
+
+	// Transfer defines source and destination of PersistentVolumeClaim
+	// that a PersistentVolume should be bound to on transfer.
+	// +optional
+	Transfer *PersistentVolumeClaimTransfer
 }
 
 // PersistentVolumeClaimConditionType defines the condition of PV claim.
@@ -469,6 +474,12 @@ const (
 	PersistentVolumeClaimResizing PersistentVolumeClaimConditionType = "Resizing"
 	// PersistentVolumeClaimFileSystemResizePending - controller resize is finished and a file system resize is pending on node
 	PersistentVolumeClaimFileSystemResizePending PersistentVolumeClaimConditionType = "FileSystemResizePending"
+	// Transfer of pvc has been started
+	PersistentVolumeClaimTransferring PersistentVolumeClaimConditionType = "Transferring"
+	// Transfer of pvc has been completed
+	PersistentVolumeClaimTransferred PersistentVolumeClaimConditionType = "Transferred"
+	// Receiving of transferred pvc has been started
+	PersistentVolumeClaimReceiving PersistentVolumeClaimConditionType = "Receiving"
 )
 
 // PersistentVolumeClaimCondition represents the current condition of PV claim
@@ -547,6 +558,19 @@ const (
 	// volume does not exist any longer and all data on it was lost.
 	ClaimLost PersistentVolumeClaimPhase = "Lost"
 )
+
+// PersistentVolumeClaimTransfer defines source and destination of PersistentVolumeClaim
+// that a PersistentVolume should be bound to on transfer.
+type PersistentVolumeClaimTransfer struct {
+	// Source is used as a reference to the source PersistentVolumeClaim by the
+	// destination PersistentVolumeClaim.
+	// +optional
+	Source *ObjectReference
+	// Destination is used as a reference to the destination PersistentVolumeClaim by the
+	// source PersistentVolumeClaim.
+	// +optional
+	Destination *ObjectReference
+}
 
 // HostPathType defines the type of host path for PV
 type HostPathType string

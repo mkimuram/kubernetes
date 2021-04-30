@@ -26,13 +26,14 @@ import (
 // PersistentVolumeClaimSpecApplyConfiguration represents an declarative configuration of the PersistentVolumeClaimSpec type for use
 // with apply.
 type PersistentVolumeClaimSpecApplyConfiguration struct {
-	AccessModes      []v1.PersistentVolumeAccessMode              `json:"accessModes,omitempty"`
-	Selector         *metav1.LabelSelectorApplyConfiguration      `json:"selector,omitempty"`
-	Resources        *ResourceRequirementsApplyConfiguration      `json:"resources,omitempty"`
-	VolumeName       *string                                      `json:"volumeName,omitempty"`
-	StorageClassName *string                                      `json:"storageClassName,omitempty"`
-	VolumeMode       *v1.PersistentVolumeMode                     `json:"volumeMode,omitempty"`
-	DataSource       *TypedLocalObjectReferenceApplyConfiguration `json:"dataSource,omitempty"`
+	AccessModes      []v1.PersistentVolumeAccessMode                  `json:"accessModes,omitempty"`
+	Selector         *metav1.LabelSelectorApplyConfiguration          `json:"selector,omitempty"`
+	Resources        *ResourceRequirementsApplyConfiguration          `json:"resources,omitempty"`
+	VolumeName       *string                                          `json:"volumeName,omitempty"`
+	StorageClassName *string                                          `json:"storageClassName,omitempty"`
+	VolumeMode       *v1.PersistentVolumeMode                         `json:"volumeMode,omitempty"`
+	DataSource       *TypedLocalObjectReferenceApplyConfiguration     `json:"dataSource,omitempty"`
+	Transfer         *PersistentVolumeClaimTransferApplyConfiguration `json:"transfer,omitempty"`
 }
 
 // PersistentVolumeClaimSpecApplyConfiguration constructs an declarative configuration of the PersistentVolumeClaimSpec type for use with
@@ -96,5 +97,13 @@ func (b *PersistentVolumeClaimSpecApplyConfiguration) WithVolumeMode(value v1.Pe
 // If called multiple times, the DataSource field is set to the value of the last call.
 func (b *PersistentVolumeClaimSpecApplyConfiguration) WithDataSource(value *TypedLocalObjectReferenceApplyConfiguration) *PersistentVolumeClaimSpecApplyConfiguration {
 	b.DataSource = value
+	return b
+}
+
+// WithTransfer sets the Transfer field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Transfer field is set to the value of the last call.
+func (b *PersistentVolumeClaimSpecApplyConfiguration) WithTransfer(value *PersistentVolumeClaimTransferApplyConfiguration) *PersistentVolumeClaimSpecApplyConfiguration {
+	b.Transfer = value
 	return b
 }

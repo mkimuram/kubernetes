@@ -2686,6 +2686,11 @@ message PersistentVolumeClaimSpec {
   // it will create a new volume based on the contents of the specified data source.
   // +optional
   optional TypedLocalObjectReference dataSource = 7;
+
+  // Transfer defines source and destination of PersistentVolumeClaim
+  // that a PersistentVolume should be bound to on transfer.
+  // +optional
+  optional PersistentVolumeClaimTransfer Transfer = 8;
 }
 
 // PersistentVolumeClaimStatus is the current status of a persistent volume claim.
@@ -2726,6 +2731,20 @@ message PersistentVolumeClaimTemplate {
   // template. The same fields as in a PersistentVolumeClaim
   // are also valid here.
   optional PersistentVolumeClaimSpec spec = 2;
+}
+
+// PersistentVolumeClaimTransfer defines source and destination of PersistentVolumeClaim
+// that a PersistentVolume should be bound to on transfer.
+message PersistentVolumeClaimTransfer {
+  // Source is used as a reference to the source PersistentVolumeClaim by the
+  // destination PersistentVolumeClaim.
+  // +optional
+  optional ObjectReference source = 1;
+
+  // Destination is used as a reference to the destination PersistentVolumeClaim by the
+  // source PersistentVolumeClaim.
+  // +optional
+  optional ObjectReference destination = 2;
 }
 
 // PersistentVolumeClaimVolumeSource references the user's PVC in the same namespace.

@@ -1302,6 +1302,7 @@ var map_PersistentVolumeClaimSpec = map[string]string{
 	"storageClassName": "Name of the StorageClass required by the claim. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1",
 	"volumeMode":       "volumeMode defines what type of volume is required by the claim. Value of Filesystem is implied when not included in claim spec.",
 	"dataSource":       "This field can be used to specify either: * An existing VolumeSnapshot object (snapshot.storage.k8s.io/VolumeSnapshot) * An existing PVC (PersistentVolumeClaim) * An existing custom resource that implements data population (Alpha) In order to use custom resource types that implement data population, the AnyVolumeDataSource feature gate must be enabled. If the provisioner or an external controller can support the specified data source, it will create a new volume based on the contents of the specified data source.",
+	"transfer":         "Transfer defines source and destination of PersistentVolumeClaim that a PersistentVolume should be bound to on transfer.",
 }
 
 func (PersistentVolumeClaimSpec) SwaggerDoc() map[string]string {
@@ -1328,6 +1329,16 @@ var map_PersistentVolumeClaimTemplate = map[string]string{
 
 func (PersistentVolumeClaimTemplate) SwaggerDoc() map[string]string {
 	return map_PersistentVolumeClaimTemplate
+}
+
+var map_PersistentVolumeClaimTransfer = map[string]string{
+	"":            "PersistentVolumeClaimTransfer defines source and destination of PersistentVolumeClaim that a PersistentVolume should be bound to on transfer.",
+	"source":      "Source is used as a reference to the source PersistentVolumeClaim by the destination PersistentVolumeClaim.",
+	"destination": "Destination is used as a reference to the destination PersistentVolumeClaim by the source PersistentVolumeClaim.",
+}
+
+func (PersistentVolumeClaimTransfer) SwaggerDoc() map[string]string {
+	return map_PersistentVolumeClaimTransfer
 }
 
 var map_PersistentVolumeClaimVolumeSource = map[string]string{

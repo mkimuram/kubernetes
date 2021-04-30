@@ -501,6 +501,10 @@ type PersistentVolumeClaimSpec struct {
 	// it will create a new volume based on the contents of the specified data source.
 	// +optional
 	DataSource *TypedLocalObjectReference `json:"dataSource,omitempty" protobuf:"bytes,7,opt,name=dataSource"`
+	// Transfer defines source and destination of PersistentVolumeClaim
+	// that a PersistentVolume should be bound to on transfer.
+	// +optional
+	Transfer *PersistentVolumeClaimTransfer `json:"transfer,omitempty" protobuf:"bytes,8,opt,name=Transfer"`
 }
 
 // PersistentVolumeClaimConditionType is a valid value of PersistentVolumeClaimCondition.Type
@@ -511,6 +515,12 @@ const (
 	PersistentVolumeClaimResizing PersistentVolumeClaimConditionType = "Resizing"
 	// PersistentVolumeClaimFileSystemResizePending - controller resize is finished and a file system resize is pending on node
 	PersistentVolumeClaimFileSystemResizePending PersistentVolumeClaimConditionType = "FileSystemResizePending"
+	// Transfer of pvc has been started
+	PersistentVolumeClaimTransferring PersistentVolumeClaimConditionType = "Transferring"
+	// Transfer of pvc has been completed
+	PersistentVolumeClaimTransferred PersistentVolumeClaimConditionType = "Transferred"
+	// Receiving of transferred pvc has been started
+	PersistentVolumeClaimReceiving PersistentVolumeClaimConditionType = "Receiving"
 )
 
 // PersistentVolumeClaimCondition contails details about state of pvc
@@ -594,6 +604,19 @@ const (
 	// volume does not exist any longer and all data on it was lost.
 	ClaimLost PersistentVolumeClaimPhase = "Lost"
 )
+
+// PersistentVolumeClaimTransfer defines source and destination of PersistentVolumeClaim
+// that a PersistentVolume should be bound to on transfer.
+type PersistentVolumeClaimTransfer struct {
+	// Source is used as a reference to the source PersistentVolumeClaim by the
+	// destination PersistentVolumeClaim.
+	// +optional
+	Source *ObjectReference `json:"source,omitempty" protobuf:"bytes,1,opt,name=source"`
+	// Destination is used as a reference to the destination PersistentVolumeClaim by the
+	// source PersistentVolumeClaim.
+	// +optional
+	Destination *ObjectReference `json:"destination,omitempty" protobuf:"bytes,2,opt,name=destination"`
+}
 
 type HostPathType string
 

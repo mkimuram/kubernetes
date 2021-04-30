@@ -4866,6 +4866,9 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: storageClassName
       type:
         scalar: string
+    - name: transfer
+      type:
+        namedType: io.k8s.api.core.v1.PersistentVolumeClaimTransfer
     - name: volumeMode
       type:
         scalar: string
@@ -4908,6 +4911,15 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: io.k8s.api.core.v1.PersistentVolumeClaimSpec
       default: {}
+- name: io.k8s.api.core.v1.PersistentVolumeClaimTransfer
+  map:
+    fields:
+    - name: destination
+      type:
+        namedType: io.k8s.api.core.v1.ObjectReference
+    - name: source
+      type:
+        namedType: io.k8s.api.core.v1.ObjectReference
 - name: io.k8s.api.core.v1.PersistentVolumeClaimVolumeSource
   map:
     fields:
