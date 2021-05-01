@@ -639,6 +639,11 @@ func (adc *attachDetachController) syncPVCByKey(key string) error {
 		return nil
 	}
 
+	if volumeutil.IsTransferInProgress(pvc) || volumeutil.IsReceiveInProgress(pvc) {
+		// Skip attach/detach for transferring/receiving PVCs.
+		return nil
+	}
+
 	objs, err := adc.podIndexer.ByIndex(common.PodPVCIndex, key)
 	if err != nil {
 		return err
