@@ -2047,6 +2047,13 @@ func ValidatePersistentVolumeClaimUpdate(newPvc, oldPvc *core.PersistentVolumeCl
 		allErrs = append(allErrs, ValidateImmutableAnnotation(newPvc.ObjectMeta.Annotations[v1.BetaStorageClassAnnotation], oldPvc.ObjectMeta.Annotations[v1.BetaStorageClassAnnotation], v1.BetaStorageClassAnnotation, field.NewPath("metadata"))...)
 	}
 
+	if newPvc.Spec.Transfer != nil && newPvc.Spec.Transfer.Destination != nil {
+		// Allow changing Spec.VolumeName only on transfer case
+		newPvcClone.Spec.VolumeName = oldPvc.Spec.VolumeName // +k8s:verify-mutation:reason=clone
+	}
+	// Allow changing Transfer
+	newPvcClone.Spec.Transfer = oldPvc.Spec.Transfer // +k8s:verify-mutation:reason=clone
+
 	if utilfeature.DefaultFeatureGate.Enabled(features.ExpandPersistentVolumes) {
 		// lets make sure storage values are same.
 		if newPvc.Status.Phase == core.ClaimBound && newPvcClone.Spec.Resources.Requests != nil {
