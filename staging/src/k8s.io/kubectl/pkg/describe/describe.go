@@ -1660,6 +1660,19 @@ func printPersistentVolumeClaim(w PrefixWriter, pvc *corev1.PersistentVolumeClai
 		w.Write(LEVEL_1, "Kind:\t%v\n", pvc.Spec.DataSource.Kind)
 		w.Write(LEVEL_1, "Name:\t%v\n", pvc.Spec.DataSource.Name)
 	}
+	if pvc.Spec.Transfer != nil {
+		w.Write(LEVEL_0, "Transfer:\n")
+		if pvc.Spec.Transfer.Source != nil {
+			w.Write(LEVEL_1, "Source:\n")
+			w.Write(LEVEL_2, "Namespace:\t%v\n", pvc.Spec.Transfer.Source.Namespace)
+			w.Write(LEVEL_2, "Name:\t%v\n", pvc.Spec.Transfer.Source.Name)
+		}
+		if pvc.Spec.Transfer.Destination != nil {
+			w.Write(LEVEL_1, "Destination:\n")
+			w.Write(LEVEL_2, "Namespace:\t%v\n", pvc.Spec.Transfer.Destination.Namespace)
+			w.Write(LEVEL_2, "Name:\t%v\n", pvc.Spec.Transfer.Destination.Name)
+		}
+	}
 }
 
 func describeContainers(label string, containers []corev1.Container, containerStatuses []corev1.ContainerStatus,
