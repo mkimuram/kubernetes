@@ -285,6 +285,15 @@ type ObjectMeta struct {
 	//
 	// +optional
 	ManagedFields []ManagedFieldsEntry `json:"managedFields,omitempty" protobuf:"bytes,17,rep,name=managedFields"`
+
+	// List of objects used by this object. Deletion of used objects are blocked until
+	// all the using objects are deleted.
+	// +optional
+	// +patchMergeKey=uid
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=uid
+	UsingReferences []UsingReference `json:"usingReferences,omitempty" patchStrategy:"merge" patchMergeKey:"uid" protobuf:"bytes,18,rep,name=usingReferences"`
 }
 
 const (
@@ -327,6 +336,29 @@ type OwnerReference struct {
 	// otherwise 422 (Unprocessable Entity) will be returned.
 	// +optional
 	BlockOwnerDeletion *bool `json:"blockOwnerDeletion,omitempty" protobuf:"varint,7,opt,name=blockOwnerDeletion"`
+}
+
+// UsingReference contains enough information to let you identify an using
+// object.
+// +structType=atomic
+type UsingReference struct {
+	// API version of the referent.
+	APIVersion string `json:"apiVersion" protobuf:"bytes,5,opt,name=apiVersion"`
+	// Kind of the referent.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+	Kind string `json:"kind" protobuf:"bytes,1,opt,name=kind"`
+	// Namespace of the referent.
+	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+	Namespace string `json:"namespace" protobuf:"bytes,2,opt,name=namespace"`
+	// Name of the referent.
+	// More info: http://kubernetes.io/docs/user-guide/identifiers#names
+	Name string `json:"name" protobuf:"bytes,3,opt,name=name"`
+	// UID of the referent.
+	// More info: http://kubernetes.io/docs/user-guide/identifiers#uids
+	UID types.UID `json:"uid" protobuf:"bytes,4,opt,name=uid,casttype=k8s.io/apimachinery/pkg/types.UID"`
+	// If true, this reference points to the managing controller.
+	// +optional
+	Controller string `json:"controller,omitempty" protobuf:"bytes,6,opt,name=controller"`
 }
 
 // +k8s:conversion-gen:explicit-from=net/url.Values
