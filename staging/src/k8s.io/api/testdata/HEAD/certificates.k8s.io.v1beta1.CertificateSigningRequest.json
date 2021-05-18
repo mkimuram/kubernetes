@@ -6,10 +6,10 @@
     "generateName": "3",
     "namespace": "4",
     "selfLink": "5",
-    "uid": "7",
-    "resourceVersion": "11042405498087606203",
+    "uid": "\u003co,c鮽ort",
+    "resourceVersion": "15080552979306262733",
     "generation": 8071137005907523419,
-    "creationTimestamp": "2061-09-19T18:13:36Z",
+    "creationTimestamp": "2104-03-25T02:26:59Z",
     "deletionGracePeriodSeconds": -4955867275792137171,
     "labels": {
       "7": "8"
@@ -39,36 +39,46 @@
         "fieldsType": "18",
         "subresource": "19"
       }
+    ],
+    "usingReferences": [
+      {
+        "apiVersion": "20",
+        "kind": "21",
+        "namespace": "22",
+        "name": "23",
+        "uid": "憴Uą飋īqJ枊a",
+        "controller": "24"
+      }
     ]
   },
   "spec": {
-    "request": "OA==",
-    "signerName": "20",
+    "request": "gQ==",
+    "signerName": "25",
     "usages": [
-      "J枊a"
+      "ʤ脽ěĂ凗蓏Ŋ蛊ĉy緅縕\u003eŽ"
     ],
-    "username": "21",
-    "uid": "22",
+    "username": "26",
+    "uid": "27",
     "groups": [
-      "23"
+      "28"
     ],
     "extra": {
-      "24": [
-  "25"
+      "29": [
+  "30"
 ]
     }
   },
   "status": {
     "conditions": [
       {
-        "type": "o,c鮽ort昍řČ扷5Ɨ",
-        "status": "ěĂ凗蓏Ŋ蛊ĉy緅縕",
-        "reason": "26",
-        "message": "27",
-        "lastUpdateTime": "1985-03-23T14:10:57Z",
-        "lastTransitionTime": "2352-05-22T04:29:36Z"
+        "type": "ǡƏS$+½H",
+        "status": "齧獚敆ȎțêɘĲ斬³;Ơ",
+        "reason": "31",
+        "message": "32",
+        "lastUpdateTime": "2777-11-15T04:18:59Z",
+        "lastTransitionTime": "2491-01-26T12:57:24Z"
       }
     ],
-    "certificate": "cw=="
+    "certificate": "jA=="
   }
 }

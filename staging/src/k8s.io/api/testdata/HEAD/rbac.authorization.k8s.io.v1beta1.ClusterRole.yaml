@@ -1,19 +1,19 @@
 aggregationRule:
   clusterRoleSelectors:
   - matchExpressions:
-    - key: S91.e5K-_e63_-_3-h
-      operator: In
+    - key: 5816m59-dx8----i--5-8t36b--09--23-u19m-35--d.vo61---4fy--9---7--9-9s-0-u5lj2--10pq-0-7-9-2-ekg-071b/YJTrcd-2.-__E_Sv__26KX_F
+      operator: NotIn
       values:
-      - 3_bQw.-dG6c-.x
+      - y_y_o0_5qN2_---_M.N_._a6.9bHjdH.-.5_.I8__.-AIw.__-___16
     matchLabels:
-      8ThjT9s-j41-0-6p-JFHn7y-74.-0MUORQQ.N4: 3L.u
+      w9v--m0-1y5-g3/JFHn7y-74.-0MUORQQ.N2.1.L.l-Y._.-44..d.__g: F-_3-n-_-__3u-.__P__.7U-Uo_F
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRole
 metadata:
   annotations:
     "9": "10"
   clusterName: "15"
-  creationTimestamp: "2061-09-19T18:13:36Z"
+  creationTimestamp: "2104-03-25T02:26:59Z"
   deletionGracePeriodSeconds: -4955867275792137171
   finalizers:
   - "14"
@@ -36,17 +36,24 @@ metadata:
     kind: "12"
     name: "13"
     uid: Dz廔ȇ{sŊƏp
-  resourceVersion: "11042405498087606203"
+  resourceVersion: "15080552979306262733"
   selfLink: "5"
-  uid: "7"
+  uid: <o,c鮽ort
+  usingReferences:
+  - apiVersion: "20"
+    controller: "24"
+    kind: "21"
+    name: "23"
+    namespace: "22"
+    uid: 憴Uą飋īqJ枊a
 rules:
 - apiGroups:
-  - "21"
+  - "26"
   nonResourceURLs:
-  - "24"
+  - "29"
   resourceNames:
-  - "23"
+  - "28"
   resources:
-  - "22"
+  - "27"
   verbs:
-  - "20"
+  - "25"

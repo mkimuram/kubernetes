@@ -4,7 +4,7 @@ metadata:
   annotations:
     "9": "10"
   clusterName: "15"
-  creationTimestamp: "2061-09-19T18:13:36Z"
+  creationTimestamp: "2104-03-25T02:26:59Z"
   deletionGracePeriodSeconds: -4955867275792137171
   finalizers:
   - "14"
@@ -27,41 +27,48 @@ metadata:
     kind: "12"
     name: "13"
     uid: Dz廔ȇ{sŊƏp
-  resourceVersion: "11042405498087606203"
+  resourceVersion: "15080552979306262733"
   selfLink: "5"
-  uid: "7"
+  uid: <o,c鮽ort
+  usingReferences:
+  - apiVersion: "20"
+    controller: "24"
+    kind: "21"
+    name: "23"
+    namespace: "22"
+    uid: 憴Uą飋īqJ枊a
 spec:
   backend:
     resource:
-      apiGroup: "23"
-      kind: "24"
-      name: "25"
-    serviceName: "21"
-    servicePort: "22"
-  ingressClassName: "20"
+      apiGroup: "27"
+      kind: "28"
+      name: "29"
+    serviceName: "26"
+    servicePort: -812468109
+  ingressClassName: "25"
   rules:
-  - host: "28"
+  - host: "32"
     http:
       paths:
       - backend:
           resource:
-            apiGroup: "31"
-            kind: "32"
-            name: "33"
-          serviceName: "30"
-          servicePort: 1973774989
-        path: "29"
-        pathType: )晿<o,c鮽ort昍řČ
+            apiGroup: "36"
+            kind: "37"
+            name: "38"
+          serviceName: "34"
+          servicePort: "35"
+        path: "33"
+        pathType: 6/ʕVŚ(ĿȊ甞谐颋ǅSǡƏS$+
   tls:
   - hosts:
-    - "26"
-    secretName: "27"
+    - "30"
+    secretName: "31"
 status:
   loadBalancer:
     ingress:
-    - hostname: "35"
-      ip: "34"
+    - hostname: "40"
+      ip: "39"
       ports:
-      - error: "36"
-        port: 2114329341
-        protocol: Ă凗蓏Ŋ蛊ĉy
+      - error: "41"
+        port: -2115540929
+        protocol: 獚敆ȎțêɘĲ斬³;Ơ歿:狞夌碕ʂɭ

@@ -253,6 +253,20 @@ func (b *PodDisruptionBudgetApplyConfiguration) WithClusterName(value string) *P
 	return b
 }
 
+// WithUsingReferences adds the given value to the UsingReferences field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the UsingReferences field.
+func (b *PodDisruptionBudgetApplyConfiguration) WithUsingReferences(values ...*v1.UsingReferenceApplyConfiguration) *PodDisruptionBudgetApplyConfiguration {
+	b.ensureObjectMetaApplyConfigurationExists()
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithUsingReferences")
+		}
+		b.UsingReferences = append(b.UsingReferences, *values[i])
+	}
+	return b
+}
+
 func (b *PodDisruptionBudgetApplyConfiguration) ensureObjectMetaApplyConfigurationExists() {
 	if b.ObjectMetaApplyConfiguration == nil {
 		b.ObjectMetaApplyConfiguration = &v1.ObjectMetaApplyConfiguration{}

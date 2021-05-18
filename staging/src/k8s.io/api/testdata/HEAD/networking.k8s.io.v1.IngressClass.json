@@ -6,10 +6,10 @@
     "generateName": "3",
     "namespace": "4",
     "selfLink": "5",
-    "uid": "7",
-    "resourceVersion": "11042405498087606203",
+    "uid": "\u003co,c鮽ort",
+    "resourceVersion": "15080552979306262733",
     "generation": 8071137005907523419,
-    "creationTimestamp": "2061-09-19T18:13:36Z",
+    "creationTimestamp": "2104-03-25T02:26:59Z",
     "deletionGracePeriodSeconds": -4955867275792137171,
     "labels": {
       "7": "8"
@@ -39,16 +39,26 @@
         "fieldsType": "18",
         "subresource": "19"
       }
+    ],
+    "usingReferences": [
+      {
+        "apiVersion": "20",
+        "kind": "21",
+        "namespace": "22",
+        "name": "23",
+        "uid": "憴Uą飋īqJ枊a",
+        "controller": "24"
+      }
     ]
   },
   "spec": {
-    "controller": "20",
+    "controller": "25",
     "parameters": {
-      "apiGroup": "21",
-      "kind": "22",
-      "name": "23",
-      "scope": "24",
-      "namespace": "25"
+      "apiGroup": "26",
+      "kind": "27",
+      "name": "28",
+      "scope": "29",
+      "namespace": "30"
     }
   }
 }

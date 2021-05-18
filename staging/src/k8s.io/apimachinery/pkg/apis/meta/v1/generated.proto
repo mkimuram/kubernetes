@@ -790,6 +790,15 @@ message ObjectMeta {
   //
   // +optional
   repeated ManagedFieldsEntry managedFields = 17;
+
+  // List of objects used by this object. Deletion of used objects are blocked until
+  // all the using objects are deleted.
+  // +optional
+  // +patchMergeKey=uid
+  // +patchStrategy=merge
+  // +listType=map
+  // +listMapKey=uid
+  repeated UsingReference usingReferences = 18;
 }
 
 // OwnerReference contains enough information to let you identify an owning
@@ -1095,6 +1104,34 @@ message UpdateOptions {
   // as defined by https://golang.org/pkg/unicode/#IsPrint.
   // +optional
   optional string fieldManager = 2;
+}
+
+// UsingReference contains enough information to let you identify an using
+// object.
+// +structType=atomic
+message UsingReference {
+  // API version of the referent.
+  optional string apiVersion = 5;
+
+  // Kind of the referent.
+  // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+  optional string kind = 1;
+
+  // Namespace of the referent.
+  // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+  optional string namespace = 2;
+
+  // Name of the referent.
+  // More info: http://kubernetes.io/docs/user-guide/identifiers#names
+  optional string name = 3;
+
+  // UID of the referent.
+  // More info: http://kubernetes.io/docs/user-guide/identifiers#uids
+  optional string uid = 4;
+
+  // If true, this reference points to the managing controller.
+  // +optional
+  optional string controller = 6;
 }
 
 // Verbs masks the value so protobuf can generate

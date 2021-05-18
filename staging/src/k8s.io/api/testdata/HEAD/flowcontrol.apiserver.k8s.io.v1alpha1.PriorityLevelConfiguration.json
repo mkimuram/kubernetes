@@ -6,10 +6,10 @@
     "generateName": "3",
     "namespace": "4",
     "selfLink": "5",
-    "uid": "7",
-    "resourceVersion": "11042405498087606203",
+    "uid": "\u003co,c鮽ort",
+    "resourceVersion": "15080552979306262733",
     "generation": 8071137005907523419,
-    "creationTimestamp": "2061-09-19T18:13:36Z",
+    "creationTimestamp": "2104-03-25T02:26:59Z",
     "deletionGracePeriodSeconds": -4955867275792137171,
     "labels": {
       "7": "8"
@@ -39,18 +39,28 @@
         "fieldsType": "18",
         "subresource": "19"
       }
+    ],
+    "usingReferences": [
+      {
+        "apiVersion": "20",
+        "kind": "21",
+        "namespace": "22",
+        "name": "23",
+        "uid": "憴Uą飋īqJ枊a",
+        "controller": "24"
+      }
     ]
   },
   "spec": {
-    "type": "īqJ枊a8衍`Ĩɘ.蘯",
+    "type": "ɑ",
     "limited": {
-      "assuredConcurrencyShares": -1089890606,
+      "assuredConcurrencyShares": 253776854,
       "limitResponse": {
-        "type": "V夸eɑeʤ",
+        "type": "脽ěĂ凗蓏Ŋ蛊ĉy緅縕",
         "queuing": {
-          "queues": 2114329341,
-          "handSize": 634969077,
-          "queueLengthLimit": 471098387
+          "queues": -591435092,
+          "handSize": -123438221,
+          "queueLengthLimit": 2048967527
         }
       }
     }
@@ -58,11 +68,11 @@
   "status": {
     "conditions": [
       {
-        "type": "ʕVŚ(ĿȊ甞谐颋ǅSǡƏS$+½H牗",
-        "status": "獚敆ȎțêɘĲ斬³;Ơ歿:狞夌碕ʂɭ",
-        "lastTransitionTime": "2559-09-14T11:32:46Z",
-        "reason": "20",
-        "message": "21"
+        "type": "ǡƏS$+½H",
+        "status": "齧獚敆ȎțêɘĲ斬³;Ơ",
+        "lastTransitionTime": "2777-11-15T04:18:59Z",
+        "reason": "25",
+        "message": "26"
       }
     ]
   }

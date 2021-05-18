@@ -191,6 +191,20 @@ func (b *JobTemplateSpecApplyConfiguration) WithClusterName(value string) *JobTe
 	return b
 }
 
+// WithUsingReferences adds the given value to the UsingReferences field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the UsingReferences field.
+func (b *JobTemplateSpecApplyConfiguration) WithUsingReferences(values ...*v1.UsingReferenceApplyConfiguration) *JobTemplateSpecApplyConfiguration {
+	b.ensureObjectMetaApplyConfigurationExists()
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithUsingReferences")
+		}
+		b.UsingReferences = append(b.UsingReferences, *values[i])
+	}
+	return b
+}
+
 func (b *JobTemplateSpecApplyConfiguration) ensureObjectMetaApplyConfigurationExists() {
 	if b.ObjectMetaApplyConfiguration == nil {
 		b.ObjectMetaApplyConfiguration = &v1.ObjectMetaApplyConfiguration{}

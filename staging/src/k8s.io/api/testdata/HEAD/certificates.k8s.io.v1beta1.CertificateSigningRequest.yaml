@@ -4,7 +4,7 @@ metadata:
   annotations:
     "9": "10"
   clusterName: "15"
-  creationTimestamp: "2061-09-19T18:13:36Z"
+  creationTimestamp: "2104-03-25T02:26:59Z"
   deletionGracePeriodSeconds: -4955867275792137171
   finalizers:
   - "14"
@@ -27,27 +27,34 @@ metadata:
     kind: "12"
     name: "13"
     uid: Dz廔ȇ{sŊƏp
-  resourceVersion: "11042405498087606203"
+  resourceVersion: "15080552979306262733"
   selfLink: "5"
-  uid: "7"
+  uid: <o,c鮽ort
+  usingReferences:
+  - apiVersion: "20"
+    controller: "24"
+    kind: "21"
+    name: "23"
+    namespace: "22"
+    uid: 憴Uą飋īqJ枊a
 spec:
   extra:
-    "24":
-    - "25"
+    "29":
+    - "30"
   groups:
-  - "23"
-  request: OA==
-  signerName: "20"
-  uid: "22"
+  - "28"
+  request: gQ==
+  signerName: "25"
+  uid: "27"
   usages:
-  - J枊a
-  username: "21"
+  - ʤ脽ěĂ凗蓏Ŋ蛊ĉy緅縕>Ž
+  username: "26"
 status:
-  certificate: cw==
+  certificate: jA==
   conditions:
-  - lastTransitionTime: "2352-05-22T04:29:36Z"
-    lastUpdateTime: "1985-03-23T14:10:57Z"
-    message: "27"
-    reason: "26"
-    status: ěĂ凗蓏Ŋ蛊ĉy緅縕
-    type: o,c鮽ort昍řČ扷5Ɨ
+  - lastTransitionTime: "2491-01-26T12:57:24Z"
+    lastUpdateTime: "2777-11-15T04:18:59Z"
+    message: "32"
+    reason: "31"
+    status: 齧獚敆ȎțêɘĲ斬³;Ơ
+    type: ǡƏS$+½H

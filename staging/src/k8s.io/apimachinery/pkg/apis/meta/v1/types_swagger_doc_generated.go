@@ -254,6 +254,7 @@ var map_ObjectMeta = map[string]string{
 	"finalizers":                 "Must be empty before the object is deleted from the registry. Each entry is an identifier for the responsible component that will remove the entry from the list. If the deletionTimestamp of the object is non-nil, entries in this list can only be removed. Finalizers may be processed and removed in any order.  Order is NOT enforced because it introduces significant risk of stuck finalizers. finalizers is a shared field, any actor with permission can reorder it. If the finalizer list is processed in order, then this can lead to a situation in which the component responsible for the first finalizer in the list is waiting for a signal (field value, external system, or other) produced by a component responsible for a finalizer later in the list, resulting in a deadlock. Without enforced ordering finalizers are free to order amongst themselves and are not vulnerable to ordering changes in the list.",
 	"clusterName":                "The name of the cluster which the object belongs to. This is used to distinguish resources with same name and namespace in different clusters. This field is not set anywhere right now and apiserver is going to ignore it if set in create or update request.",
 	"managedFields":              "ManagedFields maps workflow-id and version to the set of fields that are managed by that workflow. This is mostly for internal housekeeping, and users typically shouldn't need to set or understand this field. A workflow can be the user's name, a controller's name, or the name of a specific apply path like \"ci-cd\". The set of fields is always in the version that the workflow used when modifying the object.",
+	"usingReferences":            "List of objects used by this object. Deletion of used objects are blocked until all the using objects are deleted.",
 }
 
 func (ObjectMeta) SwaggerDoc() map[string]string {
@@ -454,6 +455,20 @@ var map_UpdateOptions = map[string]string{
 
 func (UpdateOptions) SwaggerDoc() map[string]string {
 	return map_UpdateOptions
+}
+
+var map_UsingReference = map[string]string{
+	"":           "UsingReference contains enough information to let you identify an using object.",
+	"apiVersion": "API version of the referent.",
+	"kind":       "Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds",
+	"namespace":  "Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/",
+	"name":       "Name of the referent. More info: http://kubernetes.io/docs/user-guide/identifiers#names",
+	"uid":        "UID of the referent. More info: http://kubernetes.io/docs/user-guide/identifiers#uids",
+	"controller": "If true, this reference points to the managing controller.",
+}
+
+func (UsingReference) SwaggerDoc() map[string]string {
+	return map_UsingReference
 }
 
 // AUTO-GENERATED FUNCTIONS END HERE

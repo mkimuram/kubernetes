@@ -6,10 +6,10 @@
     "generateName": "3",
     "namespace": "4",
     "selfLink": "5",
-    "uid": "7",
-    "resourceVersion": "11042405498087606203",
+    "uid": "\u003co,c鮽ort",
+    "resourceVersion": "15080552979306262733",
     "generation": 8071137005907523419,
-    "creationTimestamp": "2061-09-19T18:13:36Z",
+    "creationTimestamp": "2104-03-25T02:26:59Z",
     "deletionGracePeriodSeconds": -4955867275792137171,
     "labels": {
       "7": "8"
@@ -39,56 +39,67 @@
         "fieldsType": "18",
         "subresource": "19"
       }
+    ],
+    "usingReferences": [
+      {
+        "apiVersion": "20",
+        "kind": "21",
+        "namespace": "22",
+        "name": "23",
+        "uid": "憴Uą飋īqJ枊a",
+        "controller": "24"
+      }
     ]
   },
   "spec": {
     "priorityLevelConfiguration": {
-      "name": "20"
+      "name": "25"
     },
-    "matchingPrecedence": -595102844,
+    "matchingPrecedence": -8441701,
     "distinguisherMethod": {
-      "type": "Hr鯹)晿\u003co,c鮽ort昍řČ扷5Ɨ"
+      "type": "5ƗǸƢ6/ʕVŚ(ĿȊ甞"
     },
     "rules": [
       {
         "subjects": [
           {
-            "kind": "Ă凗蓏Ŋ蛊ĉy",
+            "kind": "燹憍峕?狱³-Ǐ忄*齧獚敆ȎțêɘĲ",
             "user": {
-              "name": "21"
+              "name": "26"
             },
             "group": {
-              "name": "22"
+              "name": "27"
             },
             "serviceAccount": {
-              "namespace": "23",
-              "name": "24"
+              "namespace": "28",
+              "name": "29"
             }
           }
         ],
         "resourceRules": [
           {
             "verbs": [
-              "25"
+              "30"
             ],
             "apiGroups": [
-              "26"
+              "31"
             ],
             "resources": [
-              "27"
+              "32"
             ],
+            "clusterScope": true,
             "namespaces": [
-              "28"
+              "33"
             ]
           }
         ],
         "nonResourceRules": [
           {
             "verbs": [
-              "29"
+              "34"
             ],
             "nonResourceURLs": [
-              "30"
+              "35"
             ]
           }
         ]
@@ -98,11 +109,11 @@
   "status": {
     "conditions": [
       {
-        "type": "?狱³-Ǐ忄*齧獚",
-        "status": "彀亞",
-        "lastTransitionTime": "2559-01-29T18:41:04Z",
-        "reason": "31",
-        "message": "32"
+        "type": "夌碕ʂɭîcP$Iņɖ橙9ȫŚʒ",
+        "status": "ƕP喂ƈ",
+        "lastTransitionTime": "2357-07-03T10:31:27Z",
+        "reason": "36",
+        "message": "37"
       }
     ]
   }

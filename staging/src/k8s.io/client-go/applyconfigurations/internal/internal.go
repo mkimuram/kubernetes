@@ -10732,6 +10732,14 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: uid
       type:
         scalar: string
+    - name: usingReferences
+      type:
+        list:
+          elementType:
+            namedType: io.k8s.apimachinery.pkg.apis.meta.v1.UsingReference
+          elementRelationship: associative
+          keys:
+          - uid
 - name: io.k8s.apimachinery.pkg.apis.meta.v1.OwnerReference
   map:
     fields:
@@ -10769,6 +10777,33 @@ var schemaYAML = typed.YAMLObject(`types:
         scalar: string
 - name: io.k8s.apimachinery.pkg.apis.meta.v1.Time
   scalar: untyped
+- name: io.k8s.apimachinery.pkg.apis.meta.v1.UsingReference
+  map:
+    fields:
+    - name: apiVersion
+      type:
+        scalar: string
+      default: ""
+    - name: controller
+      type:
+        scalar: string
+    - name: kind
+      type:
+        scalar: string
+      default: ""
+    - name: name
+      type:
+        scalar: string
+      default: ""
+    - name: namespace
+      type:
+        scalar: string
+      default: ""
+    - name: uid
+      type:
+        scalar: string
+      default: ""
+    elementRelationship: atomic
 - name: io.k8s.apimachinery.pkg.runtime.RawExtension
   map:
     elementType:

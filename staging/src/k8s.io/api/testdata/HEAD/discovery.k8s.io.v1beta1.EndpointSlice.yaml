@@ -1,33 +1,33 @@
-addressType: īqJ枊a8衍`Ĩɘ.蘯
+addressType: ɑ
 apiVersion: discovery.k8s.io/v1beta1
 endpoints:
 - addresses:
-  - "20"
+  - "25"
   conditions:
     ready: false
-    serving: false
+    serving: true
     terminating: false
   hints:
     forZones:
-    - name: "31"
-  hostname: "21"
-  nodeName: "30"
+    - name: "36"
+  hostname: "26"
+  nodeName: "35"
   targetRef:
-    apiVersion: "25"
-    fieldPath: "27"
-    kind: "22"
-    name: "24"
-    namespace: "23"
-    resourceVersion: "26"
-    uid: ɑ
+    apiVersion: "30"
+    fieldPath: "32"
+    kind: "27"
+    name: "29"
+    namespace: "28"
+    resourceVersion: "31"
+    uid: 凗蓏Ŋ蛊ĉy緅縕>Ž
   topology:
-    "28": "29"
+    "33": "34"
 kind: EndpointSlice
 metadata:
   annotations:
     "9": "10"
   clusterName: "15"
-  creationTimestamp: "2061-09-19T18:13:36Z"
+  creationTimestamp: "2104-03-25T02:26:59Z"
   deletionGracePeriodSeconds: -4955867275792137171
   finalizers:
   - "14"
@@ -50,11 +50,18 @@ metadata:
     kind: "12"
     name: "13"
     uid: Dz廔ȇ{sŊƏp
-  resourceVersion: "11042405498087606203"
+  resourceVersion: "15080552979306262733"
   selfLink: "5"
-  uid: "7"
+  uid: <o,c鮽ort
+  usingReferences:
+  - apiVersion: "20"
+    controller: "24"
+    kind: "21"
+    name: "23"
+    namespace: "22"
+    uid: 憴Uą飋īqJ枊a
 ports:
-- appProtocol: "33"
-  name: "32"
-  port: -591435092
-  protocol: ěĂ凗蓏Ŋ蛊ĉy緅縕
+- appProtocol: "38"
+  name: "37"
+  port: -1965738697
+  protocol: ?狱³-Ǐ忄*齧獚

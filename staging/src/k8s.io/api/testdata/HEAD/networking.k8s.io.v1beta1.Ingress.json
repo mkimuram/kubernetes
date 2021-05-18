@@ -6,10 +6,10 @@
     "generateName": "3",
     "namespace": "4",
     "selfLink": "5",
-    "uid": "7",
-    "resourceVersion": "11042405498087606203",
+    "uid": "\u003co,c鮽ort",
+    "resourceVersion": "15080552979306262733",
     "generation": 8071137005907523419,
-    "creationTimestamp": "2061-09-19T18:13:36Z",
+    "creationTimestamp": "2104-03-25T02:26:59Z",
     "deletionGracePeriodSeconds": -4955867275792137171,
     "labels": {
       "7": "8"
@@ -39,42 +39,52 @@
         "fieldsType": "18",
         "subresource": "19"
       }
+    ],
+    "usingReferences": [
+      {
+        "apiVersion": "20",
+        "kind": "21",
+        "namespace": "22",
+        "name": "23",
+        "uid": "憴Uą飋īqJ枊a",
+        "controller": "24"
+      }
     ]
   },
   "spec": {
-    "ingressClassName": "20",
+    "ingressClassName": "25",
     "backend": {
-      "serviceName": "21",
-      "servicePort": "22",
+      "serviceName": "26",
+      "servicePort": -812468109,
       "resource": {
-        "apiGroup": "23",
-        "kind": "24",
-        "name": "25"
+        "apiGroup": "27",
+        "kind": "28",
+        "name": "29"
       }
     },
     "tls": [
       {
         "hosts": [
-          "26"
+          "30"
         ],
-        "secretName": "27"
+        "secretName": "31"
       }
     ],
     "rules": [
       {
-        "host": "28",
+        "host": "32",
         "http": {
           "paths": [
             {
-              "path": "29",
-              "pathType": ")晿\u003co,c鮽ort昍řČ",
+              "path": "33",
+              "pathType": "6/ʕVŚ(ĿȊ甞谐颋ǅSǡƏS$+",
               "backend": {
-                "serviceName": "30",
-                "servicePort": 1973774989,
+                "serviceName": "34",
+                "servicePort": "35",
                 "resource": {
-                  "apiGroup": "31",
-                  "kind": "32",
-                  "name": "33"
+                  "apiGroup": "36",
+                  "kind": "37",
+                  "name": "38"
                 }
               }
             }
@@ -87,13 +97,13 @@
     "loadBalancer": {
       "ingress": [
         {
-          "ip": "34",
-          "hostname": "35",
+          "ip": "39",
+          "hostname": "40",
           "ports": [
             {
-              "port": 2114329341,
-              "protocol": "Ă凗蓏Ŋ蛊ĉy",
-              "error": "36"
+              "port": -2115540929,
+              "protocol": "獚敆ȎțêɘĲ斬³;Ơ歿:狞夌碕ʂɭ",
+              "error": "41"
             }
           ]
         }

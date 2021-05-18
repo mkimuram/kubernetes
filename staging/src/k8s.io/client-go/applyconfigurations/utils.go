@@ -1041,6 +1041,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationsmetav1.PreconditionsApplyConfiguration{}
 	case metav1.SchemeGroupVersion.WithKind("TypeMeta"):
 		return &applyconfigurationsmetav1.TypeMetaApplyConfiguration{}
+	case metav1.SchemeGroupVersion.WithKind("UsingReference"):
+		return &applyconfigurationsmetav1.UsingReferenceApplyConfiguration{}
 
 		// Group=networking.k8s.io, Version=v1
 	case networkingv1.SchemeGroupVersion.WithKind("HTTPIngressPath"):
