@@ -214,6 +214,45 @@ func (u *Unstructured) SetOwnerReferences(references []metav1.OwnerReference) {
 	u.setNestedField(newReferences, "metadata", "ownerReferences")
 }
 
+func (u *Unstructured) GetUsingReferences() []metav1.UsingReference {
+	field, found, err := NestedFieldNoCopy(u.Object, "metadata", "usingReferences")
+	if !found || err != nil {
+		return nil
+	}
+	original, ok := field.([]interface{})
+	if !ok {
+		return nil
+	}
+	ret := make([]metav1.UsingReference, 0, len(original))
+	for _, obj := range original {
+		o, ok := obj.(map[string]interface{})
+		if !ok {
+			// expected map[string]interface{}, got something else
+			return nil
+		}
+		ret = append(ret, extractUsingReference(o))
+	}
+	return ret
+}
+
+func (u *Unstructured) SetUsingReferences(references []metav1.UsingReference) {
+	if references == nil {
+		RemoveNestedField(u.Object, "metadata", "usingReferences")
+		return
+	}
+
+	newReferences := make([]interface{}, 0, len(references))
+	for _, reference := range references {
+		out, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&reference)
+		if err != nil {
+			utilruntime.HandleError(fmt.Errorf("unable to convert Using Reference: %v", err))
+			continue
+		}
+		newReferences = append(newReferences, out)
+	}
+	u.setNestedField(newReferences, "metadata", "usingReferences")
+}
+
 func (u *Unstructured) GetAPIVersion() string {
 	return getNestedString(u.Object, "apiVersion")
 }

@@ -315,6 +315,17 @@ func extractOwnerReference(v map[string]interface{}) metav1.OwnerReference {
 	}
 }
 
+func extractUsingReference(v map[string]interface{}) metav1.UsingReference {
+	return metav1.UsingReference{
+		Kind:       getNestedString(v, "kind"),
+		Namespace:  getNestedString(v, "namespace"),
+		Name:       getNestedString(v, "name"),
+		APIVersion: getNestedString(v, "apiVersion"),
+		UID:        types.UID(getNestedString(v, "uid")),
+		Controller: getNestedString(v, "controller"),
+	}
+}
+
 // UnstructuredJSONScheme is capable of converting JSON data into the Unstructured
 // type, which can be used for generic access to objects without a predefined scheme.
 // TODO: move into serializer/json.
