@@ -415,6 +415,7 @@ func NewControllerInitializers(loopMode ControllerLoopMode) map[string]InitFunc 
 	controllers["resourcequota"] = startResourceQuotaController
 	controllers["namespace"] = startNamespaceController
 	controllers["serviceaccount"] = startServiceAccountController
+	controllers["usingreferencecollector"] = startUsingReferenceController
 	controllers["garbagecollector"] = startGarbageCollectorController
 	controllers["daemonset"] = startDaemonSetController
 	controllers["job"] = startJobController

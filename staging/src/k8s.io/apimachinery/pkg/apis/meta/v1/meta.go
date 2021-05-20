@@ -59,6 +59,8 @@ type Object interface {
 	SetFinalizers(finalizers []string)
 	GetOwnerReferences() []OwnerReference
 	SetOwnerReferences([]OwnerReference)
+	GetUsingReferences() []UsingReference
+	SetUsingReferences([]UsingReference)
 	GetClusterName() string
 	SetClusterName(clusterName string)
 	GetManagedFields() []ManagedFieldsEntry
@@ -171,6 +173,10 @@ func (meta *ObjectMeta) SetFinalizers(finalizers []string)            { meta.Fin
 func (meta *ObjectMeta) GetOwnerReferences() []OwnerReference         { return meta.OwnerReferences }
 func (meta *ObjectMeta) SetOwnerReferences(references []OwnerReference) {
 	meta.OwnerReferences = references
+}
+func (meta *ObjectMeta) GetUsingReferences() []UsingReference { return meta.UsingReferences }
+func (meta *ObjectMeta) SetUsingReferences(references []UsingReference) {
+	meta.UsingReferences = references
 }
 func (meta *ObjectMeta) GetClusterName() string                 { return meta.ClusterName }
 func (meta *ObjectMeta) SetClusterName(clusterName string)      { meta.ClusterName = clusterName }

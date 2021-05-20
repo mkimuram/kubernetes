@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/quota/v1/generic"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/client-go/dynamic"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/metadata"
 	restclient "k8s.io/client-go/rest"
@@ -58,6 +59,7 @@ import (
 	"k8s.io/kubernetes/pkg/controller/storageversiongc"
 	ttlcontroller "k8s.io/kubernetes/pkg/controller/ttl"
 	"k8s.io/kubernetes/pkg/controller/ttlafterfinished"
+	"k8s.io/kubernetes/pkg/controller/usingreference"
 	"k8s.io/kubernetes/pkg/controller/volume/attachdetach"
 	"k8s.io/kubernetes/pkg/controller/volume/ephemeral"
 	"k8s.io/kubernetes/pkg/controller/volume/expand"
@@ -527,6 +529,31 @@ func startTTLController(ctx ControllerContext) (http.Handler, bool, error) {
 		ctx.InformerFactory.Core().V1().Nodes(),
 		ctx.ClientBuilder.ClientOrDie("ttl-controller"),
 	).Run(5, ctx.Stop)
+	return nil, true, nil
+}
+
+func startUsingReferenceController(ctx ControllerContext) (http.Handler, bool, error) {
+	cl := ctx.ClientBuilder.ClientOrDie("using-reference-controller")
+	config := ctx.ClientBuilder.ConfigOrDie("using-reference-controller")
+	metaCl, err := metadata.NewForConfig(config)
+	if err != nil {
+		return nil, true, err
+	}
+	dynCl, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, true, err
+	}
+
+	usingReferenceController := usingreference.NewUsingReferenceController(
+		cl,
+		metaCl,
+		dynCl,
+		ctx.InformerFactory.Core().V1().Secrets(),
+		ctx.RESTMapper,
+	)
+
+	go usingReferenceController.Run(1, ctx.Stop)
+
 	return nil, true, nil
 }
 
