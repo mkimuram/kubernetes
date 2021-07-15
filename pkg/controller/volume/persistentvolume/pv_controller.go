@@ -43,6 +43,7 @@ import (
 	storagehelpers "k8s.io/component-helpers/storage/volume"
 	"k8s.io/kubernetes/pkg/controller/volume/common"
 	"k8s.io/kubernetes/pkg/controller/volume/events"
+	"k8s.io/kubernetes/pkg/controller/volume/persistentvolume/csiutil"
 	"k8s.io/kubernetes/pkg/controller/volume/persistentvolume/metrics"
 	pvutil "k8s.io/kubernetes/pkg/controller/volume/persistentvolume/util"
 	"k8s.io/kubernetes/pkg/features"
@@ -2013,8 +2014,10 @@ func (ctrl *PersistentVolumeController) receiveTransferredPV(claim *v1.Persisten
 			}
 		}
 
-		// TODO: Volume needs to be modified here, before it is bound to destination PVC.
-		//       For example, CSI secrets may referencing source PVC name and namespace.
+		// Update CSI secrets
+		if err := ctrl.updateCSISecret(volume, claim); err != nil {
+			return err
+		}
 
 		// Bind volume to claim
 		if err = ctrl.bind(volume, claim); err != nil {
@@ -2094,6 +2097,82 @@ func (ctrl *PersistentVolumeController) unbindClaimFromVolume(claim *v1.Persiste
 	if err != nil {
 		klog.V(4).Infof("updating PersistentVolumeClaim[%s]: cannot update internal cache: %v", claimToClaimKey(claim), err)
 		return err
+	}
+
+	return nil
+}
+
+func hasCSISecret(volume *v1.PersistentVolume) bool {
+	if volume.Spec.PersistentVolumeSource.CSI == nil {
+		return false
+	}
+	csi := volume.Spec.PersistentVolumeSource.CSI
+
+	if csi.ControllerPublishSecretRef != nil || csi.NodeStageSecretRef != nil ||
+		csi.NodePublishSecretRef != nil || csi.ControllerExpandSecretRef != nil {
+		return true
+	}
+
+	return false
+}
+
+func (ctrl *PersistentVolumeController) updateCSISecret(volume *v1.PersistentVolume, claim *v1.PersistentVolumeClaim) error {
+	if !hasCSISecret(volume) {
+		return nil
+	}
+	csi := volume.Spec.PersistentVolumeSource.CSI
+
+	// Get storageClass
+	if volume.Spec.StorageClassName == "" {
+		// TODO: This is the case that admin manually added the secretRef to PV.
+		// It can't be resolved automatically.
+		// Need to warn to users?
+		return nil
+	}
+
+	sc, err := ctrl.kubeClient.StorageV1().StorageClasses().Get(context.TODO(), volume.Spec.StorageClassName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	// Update secretRefs based on the templates in storageClass
+	if csi.ControllerPublishSecretRef != nil {
+		csi.ControllerPublishSecretRef, err = csiutil.GetSecretReference(csiutil.ControllerPublishSecretParams, sc.Parameters, volume.Name, claim)
+		if err != nil {
+			return err
+		}
+	}
+
+	if csi.NodeStageSecretRef != nil {
+		csi.NodeStageSecretRef, err = csiutil.GetSecretReference(csiutil.NodeStageSecretParams, sc.Parameters, volume.Name, claim)
+		if err != nil {
+			return err
+		}
+	}
+
+	if csi.NodePublishSecretRef != nil {
+		csi.NodePublishSecretRef, err = csiutil.GetSecretReference(csiutil.NodePublishSecretParams, sc.Parameters, volume.Name, claim)
+		if err != nil {
+			return err
+		}
+	}
+
+	if csi.ControllerExpandSecretRef != nil {
+		csi.ControllerExpandSecretRef, err = csiutil.GetSecretReference(csiutil.ControllerExpandSecretParams, sc.Parameters, volume.Name, claim)
+		if err != nil {
+			return err
+		}
+	}
+
+	newVol, err := ctrl.kubeClient.CoreV1().PersistentVolumes().Update(context.TODO(), volume, metav1.UpdateOptions{})
+	if err != nil {
+		return err
+	}
+
+	klog.V(3).Infof("secretRefs of volume %q for claim %q updated", volume.Name, claimToClaimKey(claim))
+	_, updateErr := ctrl.storeVolumeUpdate(newVol)
+	if updateErr != nil {
+		return updateErr
 	}
 
 	return nil
