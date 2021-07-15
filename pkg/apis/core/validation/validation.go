@@ -1934,11 +1934,20 @@ func ValidatePersistentVolume(pv *core.PersistentVolume) field.ErrorList {
 func ValidatePersistentVolumeUpdate(newPv, oldPv *core.PersistentVolume) field.ErrorList {
 	allErrs := ValidatePersistentVolume(newPv)
 
+	newPv = newPv.DeepCopy()
+
 	// if oldPV does not have ControllerExpandSecretRef then allow it to be set
 	if (oldPv.Spec.CSI != nil && oldPv.Spec.CSI.ControllerExpandSecretRef == nil) &&
 		(newPv.Spec.CSI != nil && newPv.Spec.CSI.ControllerExpandSecretRef != nil) {
-		newPv = newPv.DeepCopy()
 		newPv.Spec.CSI.ControllerExpandSecretRef = nil
+	}
+
+	// Allow updating SecretRefs for transfer
+	if oldPv.Spec.CSI != nil {
+		newPv.Spec.CSI.ControllerPublishSecretRef = oldPv.Spec.CSI.ControllerPublishSecretRef // +k8s:verify-mutation:reason=clone
+		newPv.Spec.CSI.NodeStageSecretRef = oldPv.Spec.CSI.NodeStageSecretRef                 // +k8s:verify-mutation:reason=clone
+		newPv.Spec.CSI.NodePublishSecretRef = oldPv.Spec.CSI.NodePublishSecretRef             // +k8s:verify-mutation:reason=clone
+		newPv.Spec.CSI.ControllerExpandSecretRef = oldPv.Spec.CSI.ControllerExpandSecretRef   // +k8s:verify-mutation:reason=clone
 	}
 
 	// PersistentVolumeSource should be immutable after creation.
